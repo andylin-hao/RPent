@@ -135,6 +135,45 @@ TOOLS_SPEC = [
         },
     },
     {
+        "name": "view_camera_meta",
+        "description": (
+            "Read camera_meta.json from the REPL workdir. Returns the camera "
+            "intrinsics matrix K (3x3), the camera-to-world extrinsic matrix "
+            "(4x4), image dimensions, and the back-projection recipe. Use this "
+            "in PERCEPTION-ISOLATED mode to localize objects — you do NOT get "
+            "GT world coordinates."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "back_project",
+        "description": (
+            "Back-project a pixel (row, col) to a world XYZ point using the "
+            "metric depth at that pixel and the camera calibration. "
+            "Row 0 = top of image, col 0 = left. Step NN selects which "
+            "depth_NN.npy to use (default latest). Returns world_xyz in meters.\n\n"
+            "USE THIS to find where an object is in the world — look at "
+            "image_cam_NN.png to pick a pixel on the target object, then "
+            "call back_project(row, col). Sample several pixels on the object "
+            "and median their xy for robustness."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "row": {"type": "integer", "description": "Pixel row (0=top, 255=bottom)"},
+                "col": {"type": "integer", "description": "Pixel column (0=left, 255=right)"},
+                "step": {
+                    "type": ["integer", "null"],
+                    "description": "Depth step to use (default latest). 0 for initial.",
+                },
+            },
+            "required": ["row", "col"],
+        },
+    },
+    {
         "name": "finish",
         "description": (
             "Declare the task finished. Call when state.libero_terminated "
@@ -162,7 +201,8 @@ TOOLS_SPEC = [
 # Tool implementations
 # ---------------------------------------------------------------------------
 
-REPO_ROOT = Path("/mnt/public2/zhangyixian/RLinf_agentic")
+# Auto-detect repo root: this file is at <repo>/examples/embodiment/primitives/workspace_pro/hybrid_agent/tools.py
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent.parent
 
 
 def _resolve(path: str) -> Path:
@@ -240,6 +280,7 @@ def view_repl_state(step: int | None = None) -> dict:
     state_path = WORKDIR / f"state_{nn_str}.json"
     log_path = WORKDIR / f"log_{nn_str}.json"
     image_path = WORKDIR / f"image_{nn_str}.png"
+    image_cam_path = WORKDIR / f"image_cam_{nn_str}.png"
 
     out: dict = {"step": nn}
     if state_path.exists():
@@ -254,6 +295,8 @@ def view_repl_state(step: int | None = None) -> dict:
             out["log"] = json.load(f)
     if image_path.exists():
         out["_image_path"] = str(image_path)
+    if image_cam_path.exists():
+        out["_image_cam_path"] = str(image_cam_path)
     return out
 
 
@@ -315,12 +358,69 @@ def finish(status: str, summary: str) -> dict:
     return {"_finish": True, "status": status, "summary": summary}
 
 
+def view_camera_meta() -> dict:
+    """Read camera_meta.json from the workdir for perception-mode localization."""
+    p = WORKDIR / "camera_meta.json"
+    if not p.exists():
+        return {"error": f"camera_meta.json not found in {WORKDIR}; is the driver running in perception mode?"}
+    import json as _json
+    meta = _json.load(open(p))
+    return {"camera_meta": meta}
+
+
+def back_project(row: int, col: int, step: int | None = None) -> dict:
+    """Back-project a pixel to world XYZ using depth + camera calibration."""
+    import json as _json
+    import numpy as np
+
+    meta_path = WORKDIR / "camera_meta.json"
+    if not meta_path.exists():
+        return {"error": "camera_meta.json not found"}
+
+    meta = _json.load(open(meta_path))
+    E = np.array(meta["extrinsic_cam2world"])
+
+    if step is None:
+        nn = _latest_step()
+        if nn is None:
+            return {"error": "no depth files available"}
+    else:
+        nn = step
+    nn_str = f"{nn:02d}"
+
+    depth_path = WORKDIR / f"depth_{nn_str}.npy"
+    if not depth_path.exists():
+        return {"error": f"depth file not found: {depth_path}"}
+
+    depth = np.load(depth_path)
+    H, W = depth.shape
+    if row < 0 or row >= H or col < 0 or col >= W:
+        return {"error": f"pixel ({row},{col}) out of bounds; image is {H}x{W}"}
+
+    z = float(depth[row, col])
+    if z <= 0 or z > 10:
+        return {"error": f"invalid depth {z:.3f}m at pixel ({row},{col}); pick a different pixel"}
+
+    P = E @ np.array([col * z, row * z, z, 1.0])
+    world_xyz = [round(float(v), 4) for v in P[:3]]
+
+    return {
+        "pixel": [row, col],
+        "depth_m": round(z, 4),
+        "world_xyz": world_xyz,
+        "step": nn,
+        "image_size": [H, W],
+    }
+
+
 TOOL_HANDLERS = {
     "read_text_file": read_text_file,
     "write_text_file": write_text_file,
     "list_dir": list_dir,
     "view_repl_state": view_repl_state,
     "send_command": send_command,
+    "view_camera_meta": view_camera_meta,
+    "back_project": back_project,
     "finish": finish,
 }
 
@@ -355,14 +455,15 @@ def tool_result_to_content_blocks(result):
         return [{"type": "text", "text": str(result)[:MAX_TEXT_BYTES_IN_RESULT]}]
 
     image_path = result.pop("_image_path", None)
+    image_cam_path = result.pop("_image_cam_path", None)
     text = json.dumps(result, indent=2, default=str)
     if len(text) > MAX_TEXT_BYTES_IN_RESULT:
         text = text[:MAX_TEXT_BYTES_IN_RESULT] + "\n[truncated]"
 
     blocks = [{"type": "text", "text": text}]
 
-    if image_path:
-        p = Path(image_path)
+    def _add_image(path):
+        p = Path(path)
         if p.exists():
             with open(p, "rb") as f:
                 data = base64.b64encode(f.read()).decode("utf-8")
@@ -374,4 +475,9 @@ def tool_result_to_content_blocks(result):
                     "data": data,
                 },
             })
+
+    if image_path:
+        _add_image(image_path)
+    if image_cam_path:
+        _add_image(image_cam_path)
     return blocks

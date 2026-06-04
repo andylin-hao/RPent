@@ -1,5 +1,39 @@
 """System prompt and initial-user-message templates for the hybrid agent."""
 
+PERCEPTION_PREFIX = """\
+═══════════════════════════════════════════════════════════════════════
+MODE: PERCEPTION-ISOLATED — YOU DO NOT GET OBJECT WORLD COORDINATES
+═══════════════════════════════════════════════════════════════════════
+
+The state JSON only gives you object_names + robot proprioception (NO xyz
+per object). You must LOCALIZE objects yourself via camera + depth:
+
+  HOW TO GET AN OBJECT'S WORLD XYZ:
+  1. Look at image_cam_NN.png (calibration frame — the SECOND image
+     returned by view_repl_state / send_command). Find the target
+     object's pixel (row from top, col from left; image is 256×256).
+  2. Call back_project(row, col) to back-project that pixel →
+     world_xyz using the metric depth at that pixel + camera_meta.
+  3. Sample 3-5 pixels on the object and median their xy for robustness.
+  4. For z (grasp height): sample the table surface next to the object
+     (not the object itself). Then add ~0.02-0.05 m for pre-pos height.
+
+  CRITICAL: image_NN.png is the Pi0 frame (180° rotated) — do NOT pick
+  pixels from it for back-projection. Use image_cam_NN.png ONLY.
+
+  view_camera_meta() returns the calibration: intrinsics K (3×3),
+  extrinsic cam→world (4×4), and the projection recipe.
+
+  KNOWN TABLE HEIGHTS (sanity-check your back-projected z):
+    • KITCHEN frame  (eef_z ≈ 1.17):  table ≈ 0.90 m
+    • LIVING_ROOM    (eef_z ≈ 0.68):  table ≈ 0.42 m
+    • Object scene   (eef_z ≈ 0.26):  table ≈ 0.05 m
+
+ALWAYS verify your position by looking at image_cam after moving.
+Apply manipulation offsets from memory (e.g. BOWL: eef_y = plate_y + 0.045).
+
+"""
+
 SYSTEM_PROMPT = """You are an LLM-in-the-loop hybrid driver for LIBERO PRO experiments.
 
 A Python process (interactive_driver.py) is already running. It has Pi0.5
@@ -211,6 +245,34 @@ OUTPUT DISCIPLINE
   just got the state from send_command.
 • Be parsimonious with tokens. Numerical coords in 3 decimals is enough.
 • When `finish` is called the agent halts. Save artifacts BEFORE finish.
+"""
+
+
+PERCEPTION_USER_TEMPLATE = """Cell: suite={suite}  task={task}  seed={seed}  MODE=PERCEPTION-ISOLATED.
+
+The REPL driver is already running with --hide_object_coords. Its working
+directory is {workdir}. state_00.json + image_00.png + image_cam_00.png +
+depth_00.npy + camera_meta.json are ready. Run `list_dir` to confirm.
+
+You do NOT have GT object world coordinates. You must localize objects
+via image_cam + depth + camera_meta + back_project (see the MODE section
+at the top of your system prompt).
+
+Goal: make state.libero_terminated == True via a strict_perception hybrid run.
+
+Save artifacts to: {output_dir}
+- recipe filename: recipe_{recipe_tag}.jsonl
+- audit  filename: {recipe_tag}.json
+
+Suggested first steps:
+1. read_text_file("examples/embodiment/primitives/workspace_pro/memory_snapshot/MEMORY.md")
+2. read_text_file("examples/embodiment/primitives/STRICT_HYBRID_GUIDE.md")
+3. read_text_file("examples/embodiment/primitives/workspace_pro/PRO_HYBRID_GUIDE.md")
+4. view_camera_meta() — get the calibration matrices
+5. view_repl_state(step=0) — see the initial scene (both images!)
+6. Look at image_cam_00.png; find the target object; back_project() its pixels
+7. Plan; then send_command repeatedly until libero_terminated=True
+8. write_text_file the recipe + audit; finish(success)
 """
 
 

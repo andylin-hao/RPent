@@ -20,7 +20,8 @@ import sys
 import time
 from pathlib import Path
 
-REPO_ROOT = Path("/mnt/public2/zhangyixian/RLinf_agentic")
+# Auto-detect repo root: this file is at <repo>/examples/embodiment/primitives/workspace_pro/hybrid_agent/runner.py
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent.parent
 DEFAULT_WORKDIR = "/tmp/hybrid_repl"
 
 # Make tools importable when run as a script
@@ -34,7 +35,10 @@ from tools import (  # noqa: E402
     execute_tool,
     tool_result_to_content_blocks,
 )
-from prompts import SYSTEM_PROMPT, INITIAL_USER_TEMPLATE  # noqa: E402
+from prompts import (  # noqa: E402
+    SYSTEM_PROMPT, INITIAL_USER_TEMPLATE,
+    PERCEPTION_PREFIX, PERCEPTION_USER_TEMPLATE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +61,7 @@ def start_driver(
     python_bin: str = DEFAULT_DRIVER_CMD,
     driver_script: str = DEFAULT_DRIVER_SCRIPT,
     ready_timeout_s: float = 300.0,
+    perception: bool = False,
 ) -> subprocess.Popen:
     """Clear workdir and launch interactive_driver.py in background.
 
@@ -85,6 +90,9 @@ def start_driver(
         "--max_episode_steps", str(max_episode_steps),
         "--workdir", str(wd),
     ]
+    if perception:
+        cmd += ["--hide_object_coords", "--always_render"]
+        cmd += ["--video_path", str(wd / "episode.mp4")]
     print(f"[agent] driver cmd: {' '.join(cmd)}")
     print(f"[agent] driver log: {log_path}")
     print(f"[agent] CUDA_VISIBLE_DEVICES={cuda_device}  workdir={wd}")
@@ -284,7 +292,7 @@ def run_agent_loop(
 
 
 def _emergency_save(workdir, output_dir, suite, task, seed, recipe_tag,
-                    agent_error, verbose=True):
+                    agent_error, regime="strict", verbose=True):
     """If the workdir has libero_terminated=True in any state file and the
     output_dir is missing the recipe.jsonl / audit.json, stitch them now
     from logs in the workdir. Idempotent — won't overwrite existing files.
@@ -351,7 +359,7 @@ def _emergency_save(workdir, output_dir, suite, task, seed, recipe_tag,
             "suite": suite,
             "task_id": task,
             "seed": seed,
-            "regime": "strict",
+            "regime": regime,
             "strategy_notes": (
                 f"emergency-saved by runner after agent error: {agent_error}"
                 if agent_error else "emergency-saved by runner (agent did not call finish)"
@@ -392,6 +400,8 @@ def run_one_cell(
     verbose: bool = True,
     base_url: str | None = None,
     workdir: str = DEFAULT_WORKDIR,
+    perception: bool = False,
+    libero_type: str | None = None,
 ) -> dict:
     """Solve one (suite, task, seed) cell end-to-end.
 
@@ -416,12 +426,29 @@ def run_one_cell(
         output_dir = str(REPO_ROOT / "examples" / "embodiment" / "primitives" / "workspace_pro" / "results_agent_runs")
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
+    # Auto-route LIBERO_TYPE if not set
+    if libero_type is None:
+        if any(suite.endswith(s) for s in ("_swap", "_task", "_lan")):
+            libero_type = "pro"
+        else:
+            libero_type = "standard"
+
     recipe_tag = f"{suite.replace('libero_', '')}_t{task}_s{seed}"
-    user_msg = INITIAL_USER_TEMPLATE.format(
-        suite=suite, task=task, seed=seed,
-        output_dir=output_dir, recipe_tag=recipe_tag,
-        workdir=workdir,
-    )
+    regime = "strict_perception" if perception else "strict"
+    if perception:
+        user_msg = PERCEPTION_USER_TEMPLATE.format(
+            suite=suite, task=task, seed=seed,
+            output_dir=output_dir, recipe_tag=recipe_tag,
+            workdir=workdir,
+        )
+        system_prompt = PERCEPTION_PREFIX + SYSTEM_PROMPT
+    else:
+        user_msg = INITIAL_USER_TEMPLATE.format(
+            suite=suite, task=task, seed=seed,
+            output_dir=output_dir, recipe_tag=recipe_tag,
+            workdir=workdir,
+        )
+        system_prompt = SYSTEM_PROMPT
 
     proc = None
     if not no_driver:
@@ -430,6 +457,8 @@ def run_one_cell(
             workdir=workdir,
             max_episode_steps=max_episode_steps,
             cuda_device=cuda_device,
+            libero_type=libero_type,
+            perception=perception,
         )
     else:
         if not (Path(workdir) / "state_00.json").exists():
@@ -440,7 +469,7 @@ def run_one_cell(
     stats = {"total_input_tokens": 0, "total_output_tokens": 0, "turns_used": 0, "tool_calls": 0}
     try:
         finish_result, messages, stats = run_agent_loop(
-            client, model, SYSTEM_PROMPT, user_msg,
+            client, model, system_prompt, user_msg,
             max_turns=max_turns, max_tokens=max_tokens, verbose=verbose,
         )
     except Exception as e:
@@ -453,7 +482,7 @@ def run_one_cell(
         # minimal recipe + audit so the run isn't lost.
         try:
             _emergency_save(workdir, output_dir, suite, task, seed, recipe_tag,
-                            agent_error, verbose=verbose)
+                            agent_error, regime=regime, verbose=verbose)
         except Exception as e:
             if verbose:
                 print(f"[agent] emergency save failed: {e}")
@@ -513,6 +542,12 @@ def _build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--workdir", default=DEFAULT_WORKDIR,
                     help="REPL working directory (default /tmp/hybrid_repl). "
                          "Override for parallel runs.")
+    ap.add_argument("--perception", action="store_true",
+                    help="PERCEPTION-ISOLATED mode: hide object coords, "
+                         "use camera+depth+back_project for localization.")
+    ap.add_argument("--libero_type", default=None,
+                    choices=["standard", "pro", "plus"],
+                    help="LIBERO variant (auto-routed from suite suffix if not set).")
     ap.add_argument("--quiet", action="store_true")
     return ap
 
@@ -536,6 +571,8 @@ def main() -> int:
         verbose=not args.quiet,
         base_url=base_url,
         workdir=args.workdir,
+        perception=args.perception,
+        libero_type=args.libero_type,
     )
     return 0
 

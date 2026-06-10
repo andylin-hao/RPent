@@ -8,11 +8,8 @@
 #   bash install_libero_pro_plus.sh
 #   bash install_libero_pro_plus.sh --only pro
 #   bash install_libero_pro_plus.sh --only plus
-#   bash install_libero_pro_plus.sh --venv /path/to/venv
 #
 # Useful environment overrides:
-#   VENV_PY             Python executable in the target env.
-#   PYTHON_BIN          Fallback Python executable if VENV_PY is unset.
 #   LIBERO_PRO_PATH     Local LIBERO-PRO checkout.
 #   LIBERO_PLUS_PATH    Local LIBERO-plus checkout.
 #   LIBERO_PRO_HF_DIR   Snapshot with bddl_files/ and init_files/.
@@ -35,11 +32,8 @@ Usage:
     bash install_libero_pro_plus.sh
     bash install_libero_pro_plus.sh --only pro
     bash install_libero_pro_plus.sh --only plus
-    bash install_libero_pro_plus.sh --venv /path/to/venv
 
 Useful environment overrides:
-    VENV_PY             Python executable in the target env.
-    PYTHON_BIN          Fallback Python executable if VENV_PY is unset.
     LIBERO_PRO_PATH     Local LIBERO-PRO checkout.
     LIBERO_PLUS_PATH    Local LIBERO-plus checkout.
     LIBERO_PRO_HF_DIR   Snapshot with bddl_files/ and init_files/.
@@ -49,8 +43,6 @@ Useful environment overrides:
 
 Options:
   --only pro|plus       Install only one package family.
-  --venv PATH           Use PATH/bin/python as the target interpreter.
-  --python PATH         Use PATH as the target interpreter.
   --pro-path PATH       Clone/reuse LIBERO-PRO at PATH.
   --plus-path PATH      Clone/reuse LIBERO-plus at PATH.
   --hf-dir PATH         LIBERO-Pro HF perturbation snapshot.
@@ -63,8 +55,6 @@ HELP
 while [ $# -gt 0 ]; do
     case "$1" in
         --only) ONLY="${2:?missing value for --only}"; shift 2 ;;
-        --venv) VENV_PY="${2:?missing value for --venv}/bin/python"; shift 2 ;;
-        --python) VENV_PY="${2:?missing value for --python}"; shift 2 ;;
         --pro-path) LIBERO_PRO_PATH="${2:?missing value for --pro-path}"; shift 2 ;;
         --plus-path) LIBERO_PLUS_PATH="${2:?missing value for --plus-path}"; shift 2 ;;
         --hf-dir) LIBERO_PRO_HF_DIR="${2:?missing value for --hf-dir}"; shift 2 ;;
@@ -75,26 +65,18 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-if [ -z "${VENV_PY:-}" ]; then
-    if [ -n "${PYTHON_BIN:-}" ]; then
-        VENV_PY="$PYTHON_BIN"
-    else
-        VENV_PY="$(command -v python)"
-    fi
-fi
-
-if [ ! -x "$VENV_PY" ]; then
-    echo "[ERROR] Python executable not found or not executable: $VENV_PY" >&2
-    echo "        Pass --venv /path/to/venv or set VENV_PY." >&2
+PYTHON="$(command -v python || true)"
+if [ -z "$PYTHON" ] || [ ! -x "$PYTHON" ]; then
+    echo "[ERROR] python not found on PATH; activate the target environment first." >&2
     exit 1
 fi
 
-VENV_DIR="$($VENV_PY - <<'PY'
+VENV_DIR="$($PYTHON - <<'PY'
 import sys
 print(sys.prefix)
 PY
 )"
-PIP=("$VENV_PY" -m pip)
+PIP=("$PYTHON" -m pip)
 
 LIBERO_PRO_PATH="${LIBERO_PRO_PATH:-$VENV_DIR/libero_pro}"
 LIBERO_PLUS_PATH="${LIBERO_PLUS_PATH:-$VENV_DIR/libero_plus}"
@@ -115,7 +97,7 @@ else
 fi
 
 echo "[install] repo root       = $ROOT_DIR"
-echo "[install] VENV_PY         = $VENV_PY"
+echo "[install] python          = $PYTHON"
 echo "[install] sys.prefix      = $VENV_DIR"
 echo "[install] LIBERO_PRO      = $LIBERO_PRO_PATH"
 echo "[install] LIBERO_PLUS     = $LIBERO_PLUS_PATH"
@@ -127,7 +109,7 @@ echo "[install] github prefix   = $GH"
 [ -n "$ONLY" ] && echo "[install] only            = $ONLY"
 
 python_clean() {
-    PYTHONNOUSERSITE=1 PYTHONPATH= "$VENV_PY" "$@"
+    PYTHONNOUSERSITE=1 PYTHONPATH= "$PYTHON" "$@"
 }
 
 clone_or_reuse() {
@@ -242,7 +224,7 @@ install_libero_pro() {
         echo "[pro] continuing with assets already present in $dest"
         cat <<EOF
 [pro] To refresh perturbation assets, run:
-$VENV_PY - <<'PY'
+python - <<'PY'
 from huggingface_hub import snapshot_download
 snapshot_download(
     repo_id='zhouxueyang/LIBERO-Pro', repo_type='dataset',
@@ -253,7 +235,7 @@ PY
 EOF
     fi
 
-    PYTHONNOUSERSITE=1 PYTHONPATH= LIBERO_CONFIG_PATH="$LIBERO_PRO_CONFIG_PATH" LIBERO_TYPE=pro "$VENV_PY" - <<'PY'
+    PYTHONNOUSERSITE=1 PYTHONPATH= LIBERO_CONFIG_PATH="$LIBERO_PRO_CONFIG_PATH" LIBERO_TYPE=pro "$PYTHON" - <<'PY'
 import os
 os.environ.setdefault("LIBERO_TYPE", "pro")
 import liberopro.liberopro.benchmark as bench
@@ -334,7 +316,7 @@ install_libero_plus() {
 
     write_libero_config plus "$LIBERO_PLUS_CONFIG_PATH" "$plus_package_dir"
 
-    PYTHONNOUSERSITE=1 PYTHONPATH= LIBERO_CONFIG_PATH="$LIBERO_PLUS_CONFIG_PATH" "$VENV_PY" - <<'PY'
+    PYTHONNOUSERSITE=1 PYTHONPATH= LIBERO_CONFIG_PATH="$LIBERO_PLUS_CONFIG_PATH" "$PYTHON" - <<'PY'
 import importlib
 import os
 

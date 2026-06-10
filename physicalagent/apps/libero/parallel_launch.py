@@ -48,7 +48,6 @@ from physicalagent.config import (
     get_anthropic_base_url,
     get_openai_compat_api_key,
     get_openai_compat_base_url,
-    get_python_bin,
 )
 
 _THIS_DIR = Path(__file__).resolve().parent
@@ -78,7 +77,6 @@ def _summarize_process(proc, log_path: str, tag: str, cell: tuple) -> dict:
 
 def _runner_cmd(
     *,
-    python_bin: str,
     suite: str,
     task: int,
     seed: int,
@@ -99,7 +97,7 @@ def _runner_cmd(
     openai_compat_no_images: bool,
 ) -> list[str]:
     cmd = [
-        python_bin,
+        sys.executable,
         str(_THIS_DIR / "runner.py"),
         "--suite", suite,
         "--task", str(task),
@@ -155,7 +153,6 @@ def main() -> int:
                     help="defaults to the selected backend's API key env var")
     ap.add_argument("--base_url", default=None,
                     help="defaults to the selected backend's base URL env var")
-    ap.add_argument("--python_bin", default=get_python_bin())
     ap.add_argument("--workdir_root", default=None,
                     help="Each cell gets a fresh <root>/hybrid_repl_<tag>/ directory. "
                          "Default: <output_dir>/repl, or PHYSICALAGENT_WORKDIR_PREFIX.")
@@ -248,7 +245,6 @@ def main() -> int:
         log_path = f"{args.log_dir}/agent_{tag}.log"
 
         cmd = _runner_cmd(
-            python_bin=args.python_bin,
             suite=suite, task=task, seed=seed,
             cuda_device=cuda, workdir=workdir,
             model=args.model,

@@ -252,12 +252,12 @@ freely `reset` to retry the same task.
 
 ```bash
 cd ${PHYSICALAGENT_REPO_ROOT:-$(pwd)}
-REPL_WORKDIR="${PHYSICALAGENT_WORKDIR_PREFIX:-$(${PYTHON_BIN:-python} - <<'PY'
+REPL_WORKDIR="${PHYSICALAGENT_WORKDIR_PREFIX:-$(python - <<'PY'
 from physicalagent.config import get_default_workdir_prefix
 print(get_default_workdir_prefix())
 PY
 )}"
-CUDA_VISIBLE_DEVICES=0 ${PYTHON_BIN:-python} \
+CUDA_VISIBLE_DEVICES=0 python \
     physicalagent/backends/rlinf/repl_driver.py \
     --workdir "$REPL_WORKDIR" \
     --suite libero_10 --task <N> --seed 0 --max_episode_steps 5000
@@ -850,7 +850,7 @@ extend the schema rather than collapse.
 Run this at the end of a successful REPL session, before issuing `exit`:
 
 ```bash
-${PYTHON_BIN:-python} - <<'PYEOF'
+python - <<'PYEOF'
 import json, glob, os, re
 WORKDIR = "$REPL_WORKDIR"
 OUTDIR  = "${PHYSICALAGENT_REPO_ROOT:-$(pwd)}/physicalagent/primitives/results_all_10"
@@ -1230,7 +1230,7 @@ Cross-suite progress + non-obvious past failures:
    → scan one-line hooks; Read matching .md files for relevant fixes.
 1. cd ${PHYSICALAGENT_REPO_ROOT:-$(pwd)}
 2. Bash run_in_background:true
-     CUDA_VISIBLE_DEVICES=0 ${PYTHON_BIN:-python} \
+     CUDA_VISIBLE_DEVICES=0 python \
          physicalagent/backends/rlinf/repl_driver.py \
          --suite libero_10 --task <N> --seed 0 --max_episode_steps 5000
 3. Bash run_in_background:true (wait for state_00.json)

@@ -1,6 +1,6 @@
 ---
 name: libero-pro-plus-install
-description: Reproduce LIBERO-Pro + LIBERO-Plus install via install_libero_pro_plus.sh; paths are configured with VENV_PY, LIBERO_PRO_PATH, LIBERO_PLUS_PATH, and LIBERO_PRO_HF_DIR.
+description: Reproduce LIBERO-Pro + LIBERO-Plus install via install_libero_pro_plus.sh; paths are configured with LIBERO_PRO_PATH, LIBERO_PLUS_PATH, and LIBERO_PRO_HF_DIR.
 metadata: 
   node_type: memory
   type: reference
@@ -33,7 +33,6 @@ What it does, on top of an existing `libero` install in the target environment:
    - Verify import + assets dir present (assets bundled in the LIBERO-Plus checkout at `liberoplus/liberoplus/assets/`)
 
 **Env vars** to override defaults:
-- `VENV_PY` — python in target environment (default `$PYTHON_BIN`, then `python`)
 - `LIBERO_PRO_PATH` / `LIBERO_PLUS_PATH` — repo locations
 - `LIBERO_PRO_HF_DIR` — HF snapshot path
 - `USE_MIRROR=1` — use `ghfast.top` mirror for unstable github TLS

@@ -601,7 +601,7 @@ This is the core of perception-isolated mode. To find where an object is:
 2. Read the metric depth at that pixel from `depth_NN.npy` and back-project to
    world using `camera_meta.json`. Run this helper via Bash (fill in row,col):
 
-   ${PYTHON_BIN:-python} - <<'PY'
+   python - <<'PY'
    import json, numpy as np
    wd="{WORKDIR}"; row, col = ROW, COL            # <-- your pixel
    cm=json.load(open(f"{wd}/camera_meta.json"))

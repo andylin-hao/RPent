@@ -6,7 +6,6 @@ of computing ``Path(__file__).resolve().parents[N]`` ad-hoc.
 from __future__ import annotations
 
 import os
-import sys
 import tempfile
 from pathlib import Path
 
@@ -55,15 +54,6 @@ def get_repl_driver_script() -> Path:
 
 def get_logs_dir() -> Path:
     return get_repo_root() / "logs"
-
-
-# ============================================================================
-# External tool / environment paths  (env var with sensible defaults)
-# ============================================================================
-
-def get_python_bin() -> str:
-    """Python interpreter that can load RLinf + LIBERO + OpenPI."""
-    return os.environ.get("PYTHON_BIN", sys.executable)
 
 
 def get_pi05_checkpoint_path() -> str:

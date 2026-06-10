@@ -35,13 +35,11 @@ from physicalagent.config import (
     get_openai_compat_base_url,
     get_openai_compat_model,
     get_openai_compat_supports_images,
-    get_python_bin,
     get_repl_driver_script,
     get_repo_root,
 )
 
 REPO_ROOT = get_repo_root()
-DEFAULT_DRIVER_CMD = get_python_bin()
 DEFAULT_DRIVER_SCRIPT = str(get_repl_driver_script())
 
 from physicalagent.cerebrum.anthropic import AnthropicCerebrum  # noqa: E402
@@ -74,7 +72,6 @@ def start_driver(
     libero_type: str | None = None,
     cuda_device: str | None = None,
     log_path: str | None = None,
-    python_bin: str | None = None,
     driver_script: str | None = None,
     ready_timeout_s: float = 300.0,
     perception: bool = False,
@@ -98,7 +95,7 @@ def start_driver(
     env.setdefault("ROBOT_PLATFORM", "LIBERO")
 
     cmd = [
-        python_bin or get_python_bin(),
+        sys.executable,
         driver_script or str(get_repl_driver_script()),
         "--suite", suite,
         "--task", str(task),

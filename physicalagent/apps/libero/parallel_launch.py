@@ -94,6 +94,7 @@ def _runner_cmd(
     libero_type: str | None,
     claude_code_timeout_s: int | None,
     claude_code_max_budget_usd: float | None,
+    codex_timeout_s: int | None,
     openai_compat_no_images: bool,
 ) -> list[str]:
     cmd = [
@@ -120,10 +121,11 @@ def _runner_cmd(
         cmd += ["--claude_code_timeout_s", str(claude_code_timeout_s)]
     if claude_code_max_budget_usd is not None:
         cmd += ["--claude_code_max_budget_usd", str(claude_code_max_budget_usd)]
+    if codex_timeout_s is not None:
+        cmd += ["--codex_timeout_s", str(codex_timeout_s)]
     if base_url:
         cmd += ["--base_url", base_url]
-    if api_key and cerebrum in {"anthropic", "openai_compat"}:
-        cmd += ["--api_key", api_key]
+    # Do not pass API keys on argv; main() injects them through the child env.
     if openai_compat_no_images:
         cmd += ["--openai_compat_no_images"]
     return cmd
@@ -142,7 +144,7 @@ def main() -> int:
     ap.add_argument("--cuda_devices", type=str, nargs="+", default=["0", "1", "2", "3"])
     ap.add_argument("--model", default=None,
                     help="Model id. Defaults to the selected backend's model env var.")
-    ap.add_argument("--cerebrum", default="anthropic", choices=["anthropic", "openai_compat", "claude_code"],
+    ap.add_argument("--cerebrum", default="anthropic", choices=["anthropic", "openai_compat", "claude_code", "codex"],
                     help="LLM backend passed to runner.py.")
     ap.add_argument("--max_turns", type=int, default=40)
     ap.add_argument("--max_tokens", type=int, default=4096)
@@ -169,6 +171,8 @@ def main() -> int:
                     help="Wall-clock cap for claude -p cells. Defaults in runner.py.")
     ap.add_argument("--claude_code_max_budget_usd", type=float, default=None,
                     help="Budget passed to claude -p --max-budget-usd.")
+    ap.add_argument("--codex_timeout_s", type=int, default=None,
+                    help="Wall-clock cap for codex exec cells. Defaults in runner.py.")
     ap.add_argument("--openai_compat_no_images", action="store_true",
                     help="Do not send tool-result images to an openai_compat model.")
     ap.add_argument("--dry_run", action="store_true")
@@ -193,9 +197,12 @@ def main() -> int:
     if args.cerebrum == "openai_compat":
         api_key = args.api_key or get_openai_compat_api_key()
         base_url = args.base_url or get_openai_compat_base_url()
-    else:
+    elif args.cerebrum == "anthropic":
         api_key = args.api_key or get_anthropic_api_key()
         base_url = args.base_url or get_anthropic_base_url()
+    else:
+        api_key = args.api_key
+        base_url = args.base_url
     if args.cerebrum == "anthropic" and not api_key:
         print("ERROR: ANTHROPIC_API_KEY missing", file=sys.stderr)
         return 2
@@ -259,6 +266,7 @@ def main() -> int:
             libero_type=args.libero_type,
             claude_code_timeout_s=args.claude_code_timeout_s,
             claude_code_max_budget_usd=args.claude_code_max_budget_usd,
+            codex_timeout_s=args.codex_timeout_s,
             openai_compat_no_images=args.openai_compat_no_images,
         )
 
@@ -275,7 +283,7 @@ def main() -> int:
                 env["OPENAI_COMPAT_API_KEY"] = api_key
             if base_url:
                 env["OPENAI_COMPAT_BASE_URL"] = base_url
-        else:
+        elif args.cerebrum == "anthropic":
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
             if base_url:

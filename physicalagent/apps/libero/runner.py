@@ -44,6 +44,7 @@ DEFAULT_DRIVER_SCRIPT = str(get_repl_driver_script())
 
 from physicalagent.cerebrum.anthropic import AnthropicCerebrum  # noqa: E402
 from physicalagent.cerebrum.claude_code import ClaudeCodeCerebrum  # noqa: E402
+from physicalagent.cerebrum.codex import CodexCerebrum  # noqa: E402
 from physicalagent.cerebrum.openai_compat import OpenAICompatibleCerebrum  # noqa: E402
 from physicalagent.context.libero_prompts import (  # noqa: E402
     CLAUDE_CODE_PERCEPTION_PROMPT_TEMPLATE,
@@ -308,6 +309,7 @@ def run_one_cell(
     openai_compat_supports_images: bool | None = None,
     claude_code_timeout_s: int | None = None,
     claude_code_max_budget_usd: float | None = None,
+    codex_timeout_s: int | None = None,
 ) -> dict:
     """Solve one (suite, task, seed) cell end-to-end.
 
@@ -319,8 +321,9 @@ def run_one_cell(
 
     ``cerebrum_type`` selects the LLM backend:
     - ``"anthropic"`` — Anthropic Messages API with tool-use (default).
-    - ``"openai_compat"`` — OpenAI-compatible Chat Completions with tool-use.
+    - ``"openai_compat"`` — OpenAI-compatible Chat Completions.
     - ``"claude_code"`` — delegates to ``claude -p`` (Claude Code).
+    - ``"codex"`` — delegates to local ``codex exec``.
     """
     if max_episode_steps == 600 and "libero_10" in suite:
         max_episode_steps = 5000
@@ -403,6 +406,22 @@ def run_one_cell(
             extra_dirs=[str(get_memory_dir())],
             output_path=cc_output_path,
         )
+    elif cerebrum_type == "codex":
+        cx_timeout_s = codex_timeout_s
+        if cx_timeout_s is None:
+            cx_timeout_s = int(os.environ.get(
+                "CODEX_TIMEOUT_S",
+                os.environ.get("CELL_TIMEOUT_S", "1200" if perception else "600"),
+            ))
+        cx_output_path = Path(output_dir) / f"codex_{suite.replace('libero_', '')}_t{task}_s{seed}.txt"
+        cerebrum = CodexCerebrum(
+            workdir=workdir,
+            repo_root=REPO_ROOT,
+            model=model,
+            timeout_s=cx_timeout_s,
+            extra_dirs=[str(get_memory_dir())],
+            output_path=cx_output_path,
+        )
     else:
         raise ValueError(f"unknown cerebrum_type: {cerebrum_type}")
 
@@ -416,9 +435,9 @@ def run_one_cell(
     recipe_tag = f"{suite.replace('libero_', '')}_t{task}_s{seed}"
     regime = "strict_perception" if perception else "strict"
 
-    if cerebrum_type == "claude_code":
-        # Claude Code gets the full legacy single-shot prompt.  It interacts
-        # through Bash/Read/Write directly, not Anthropic API tool schemas.
+    if cerebrum_type in {"claude_code", "codex"}:
+        # CLI cerebrums get the full legacy single-shot prompt.  They interact
+        # through their own filesystem tools, not API tool schemas.
         system_prompt = ""
         template = (
             CLAUDE_CODE_PERCEPTION_PROMPT_TEMPLATE
@@ -457,6 +476,8 @@ def run_one_cell(
             perception=perception,
         )
         if cerebrum_type == "claude_code":
+            cerebrum.set_driver_process(proc)
+        elif cerebrum_type == "codex":
             cerebrum.set_driver_process(proc)
     else:
         if not (Path(workdir) / "state_00.json").exists():
@@ -545,8 +566,8 @@ def _build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--base_url", default=None,
                     help="API base URL. Defaults to the selected backend's base URL env var.")
     ap.add_argument("--cerebrum", default="anthropic",
-                    choices=["anthropic", "openai_compat", "claude_code"],
-                    help="LLM backend: anthropic | openai_compat | claude_code.")
+                    choices=["anthropic", "openai_compat", "claude_code", "codex"],
+                    help="LLM backend: anthropic | openai_compat | claude_code | codex.")
     ap.add_argument("--openai_compat_no_images", action="store_true",
                     help="Do not send tool-result images to an openai_compat model.")
     ap.add_argument("--claude_code_timeout_s", type=int, default=None,
@@ -555,6 +576,9 @@ def _build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--claude_code_max_budget_usd", type=float, default=None,
                     help="Budget passed to claude -p --max-budget-usd. "
                          "Defaults to MAX_BUDGET_USD env or 10.")
+    ap.add_argument("--codex_timeout_s", type=int, default=None,
+                    help="Wall-clock cap for codex exec. Defaults to CODEX_TIMEOUT_S, "
+                         "or CELL_TIMEOUT_S, or 1200 in --perception mode / 600 otherwise.")
     ap.add_argument("--no_driver", action="store_true",
                     help="Don't spawn driver; attach to existing workdir")
     ap.add_argument("--workdir", default=None,
@@ -577,9 +601,12 @@ def main() -> int:
     if args.cerebrum == "openai_compat":
         api_key = args.api_key or get_openai_compat_api_key()
         base_url = args.base_url or get_openai_compat_base_url()
-    else:
+    elif args.cerebrum == "anthropic":
         api_key = args.api_key or get_anthropic_api_key()
         base_url = args.base_url or get_anthropic_base_url()
+    else:
+        api_key = args.api_key
+        base_url = args.base_url
     if args.cerebrum == "anthropic" and not api_key:
         print("ERROR: set ANTHROPIC_API_KEY env var or pass --api_key", file=sys.stderr)
         return 2
@@ -606,6 +633,7 @@ def main() -> int:
         openai_compat_supports_images=not args.openai_compat_no_images,
         claude_code_timeout_s=args.claude_code_timeout_s,
         claude_code_max_budget_usd=args.claude_code_max_budget_usd,
+        codex_timeout_s=args.codex_timeout_s,
     )
     return 0
 

@@ -1,5 +1,9 @@
 # Physical Agent
 
+Physical Agent Architecture
+
+![Physical Agent Architecture](assets/arch.png)
+
 To begin with, 
 1. clone RLinf and physical agent side-by-side.
 ```bash

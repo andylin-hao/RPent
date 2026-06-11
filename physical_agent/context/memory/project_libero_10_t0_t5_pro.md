@@ -7,7 +7,7 @@ metadata:
   originSessionId: 23bda317-5513-4ade-ae34-7d3f3988aeef
 ---
 
-LIBERO-Pro `libero_10` (long) tasks t0–t5 seed=0 covered 2026-05-21. Artifacts at `physicalagent/primitives/workspace_pro/results_10_pert/`.
+LIBERO-Pro `libero_10` (long) tasks t0–t5 seed=0 covered 2026-05-21. Artifacts at `physical_agent/primitives/workspace_pro/results_10_pert/`.
 
 **Pi0 fullshot baselines (24 runs, 4 cells × 6 tasks, minus t2_task which has 0 init_states):**
 

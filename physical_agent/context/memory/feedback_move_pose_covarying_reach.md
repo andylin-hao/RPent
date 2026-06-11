@@ -18,7 +18,7 @@ z=0.92 at y=+0.12, and pi0 (which co-varies orientation) reaches even farther-fo
 rank-deficient there → the position servo stalls.
 
 **How to apply:** use the new **`move_pose`** primitive (added 2026-05-27 to
-`physicalagent/primitives/primitives.py` + `interactive_driver.py`; physics-only OSC,
+`physical_agent/primitives/primitives.py` + `interactive_driver.py`; physics-only OSC,
 Rule-compliant). It servos `action[:3]` (xyz) AND `action[3]`(pitch)/`action[5]`(yaw) SIMULTANEOUSLY
 each env.step toward `target_xyz`+`target_pitch`+`target_yaw`. JSON:
 `{"action":"move_pose","xyz":[x,y,z],"target_pitch":-0.7,"target_yaw":null,"gripper":-1,

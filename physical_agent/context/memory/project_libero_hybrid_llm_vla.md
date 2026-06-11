@@ -1,6 +1,6 @@
 ---
 name: project-libero-hybrid-llm-vla
-description: "Hybrid LLM-in-the-loop + Pi0.5 VLA pipeline solved libero_spatial task 0 (On(bowl,plate)); driver at physicalagent/primitives/"
+description: "Hybrid LLM-in-the-loop + Pi0.5 VLA pipeline solved libero_spatial task 0 (On(bowl,plate)); driver at physical_agent/primitives/"
 metadata: 
   node_type: memory
   type: project
@@ -9,7 +9,7 @@ metadata:
 
 Worked end-to-end on 2026-05-18 — libero_spatial task 0, seed 0, libero_terminated=True with bowl→plate xy err=10mm.
 
-**Architecture:** `physicalagent/primitives/hybrid_pick_place.py` runs as one process, dumps `post_pick.png` + `state_after_pick.json` then blocks on `<workdir>/decision.json`. Claude reads image (Read tool) + privileged state (Bash), writes target_xyz to decision.json. Script unblocks, runs scripted `move_to(target_xyz, gripper=+1)` + `release()`, dumps result.
+**Architecture:** `physical_agent/primitives/hybrid_pick_place.py` runs as one process, dumps `post_pick.png` + `state_after_pick.json` then blocks on `<workdir>/decision.json`. Claude reads image (Read tool) + privileged state (Bash), writes target_xyz to decision.json. Script unblocks, runs scripted `move_to(target_xyz, gripper=+1)` + `release()`, dumps result.
 
 **Three lessons from this run (essential for any future Hybrid LLM+VLA experiment on LIBERO):**
 
@@ -36,7 +36,7 @@ Worked end-to-end on 2026-05-18 — libero_spatial task 0, seed 0, libero_termin
   - **Simple tabletop pick (t0,1,2,3,5,6,7,8)**: sub-instr + scripted place = full task.
   - **Hard pick context (t4 drawer, t9 cabinet)**: sub-instr fails (Pi0.5 descends to table reflexively); full task prompt makes Pi0.5 do the *entire* task internally (pick→drawer-open→place), `stopped_at_pick=True` because libero_term fires DURING the pick primitive. Scripted place phase never runs.
 - Implication: best LLM-orchestrated hybrid policy is graceful degradation — try sub-instr first (LLM does high-level planning), fall back to full task instruction (LLM becomes a dispatcher; Pi0.5 does everything).
-- Code: `physicalagent/primitives/{test_hybrid_all_spatial.py, test_hybrid_failed_retry.py}`. Per-rollout JSONs in `results_all_spatial{,_retry}/`.
+- Code: `physical_agent/primitives/{test_hybrid_all_spatial.py, test_hybrid_failed_retry.py}`. Per-rollout JSONs in `results_all_spatial{,_retry}/`.
 
 **libero_10 (libero_long) extension — 8/10 libero_term, 5 strict (2026-05-19):**
 - Strict "Pi0 only pick + LLM all place" success on t0, t1, t4, t6, t7 — all are clean pick-place (two boxes/cans/mugs → basket/plates).
@@ -47,11 +47,11 @@ Worked end-to-end on 2026-05-18 — libero_spatial task 0, seed 0, libero_termin
 - Slow-step lesson generalized: libero_10 cylindrical/box objects (soup cans, butter, cream cheese) need `step_clip ≤ 0.02` to avoid mid-translation gripper slip; spatial bowl tolerated 0.04.
 - Multi-stage move (lift → travel → descend) is mandatory for cross-table travel — single diagonal move always OSC-stalls or causes object drop.
 - Object disturbance during travel: gripper fingers (open or closed) sweep adjacent items; basket / moka pots get pushed +5-10 cm by robot proximity. Always re-read state JSON before issuing next target.
-- Code: `physicalagent/backends/rlinf/repl_driver.py` extended with `--suite libero_10 --task <N>` flags and `reset` REPL command.
+- Code: `physical_agent/backends/rlinf/repl_driver.py` extended with `--suite libero_10 --task <N>` flags and `reset` REPL command.
 
 **Strict regime — "Pi0 only for pick, LLM does everything else" — 10/10 success on libero_spatial (2026-05-18):**
 Key trick to enforce strictness on elevated/drawer pickups (t4, t9): added `track_obj` + `track_obj_lift_thresh` params to `pick()` that monitor the target object's z (privileged sim state) and break out of Pi0.5 mid-trajectory as soon as the object lifts 5 cm above its init z. With this hard cut, Pi0.5 has no opportunity to execute its trained pick-and-place sequence — the LLM (Claude) then takes over via scripted move_to + release.
 - t9 (bowl on cabinet): full-prompt pi0_pick with track_obj triggers at chunk 13/40; LLM moves 24 cm to plate (single move_to); release in 3 steps → libero_term=True, bowl→plate err **3.1 mm**.
 - t4 (bowl in drawer): pi0_pick triggers at chunk 12/50; LLM does 3-stage move (clear-drawer-z + horizontal-travel + descend) because OSC can't do large diagonal moves in one shot; release in 8 steps → libero_term=True, bowl→plate err **15.3 mm**.
-- Interactive driver: `physicalagent/backends/rlinf/repl_driver.py` — REPL via `$OUTPUT_DIR/hybrid_repl_<tag>/command.json` polling; supports move_to/pi0_pick/release/set_gripper/reset/exit actions; appends a step entry to `states.json` and writes `images/image_<N>.png` after every command.
+- Interactive driver: `physical_agent/backends/rlinf/repl_driver.py` — REPL via `$OUTPUT_DIR/hybrid_repl_<tag>/command.json` polling; supports move_to/pi0_pick/release/set_gripper/reset/exit actions; appends a step entry to `states.json` and writes `images/image_<N>.png` after every command.
 - LIBERO OSC controller can NOT do large diagonal moves with a held object in one shot — break long path into stages (lift → translate → descend) for reliable convergence.

@@ -121,7 +121,7 @@ WORKFLOW
 ═══════════════════════════════════════════════════════════════════════
 
 1. READ MEMORY FIRST. The portable snapshot is in the repo at
-   `physicalagent/context/memory/`
+   `physical_agent/context/memory/`
   It contains the "operating wisdom" — a collection of `feedback_*.md` and
    `project_*.md` files cataloging magic numbers, gotchas, and failure
    modes learned across many runs.
@@ -140,12 +140,12 @@ WORKFLOW
    embed in their coords but never explain in notes.
 
 2. READ THE GUIDES (do this AFTER memory, only once each):
-   • physicalagent/context/guides/STRICT_HYBRID_GUIDE.md
+   • physical_agent/context/guides/STRICT_HYBRID_GUIDE.md
      — operating manual, command schemas, worked examples, three rules
-   • physicalagent/context/guides/PRO_HYBRID_GUIDE.md
+   • physical_agent/context/guides/PRO_HYBRID_GUIDE.md
      — LIBERO-PRO specific (frame split, perturbation axes, four-cell
        experiment pattern)
-   • physicalagent/context/guides/env_calibration.md
+   • physical_agent/context/guides/env_calibration.md
      — OSC workspace z/xy bounds per frame
 
 3. CHECK PAST RECIPES for similar cells. Examples already solved:
@@ -265,9 +265,9 @@ Save artifacts to: {output_dir}
 - audit  filename: {recipe_tag}.json
 
 Suggested first steps:
-1. read_text_file("physicalagent/context/memory/MEMORY.md")
-2. read_text_file("physicalagent/context/guides/STRICT_HYBRID_GUIDE.md")
-3. read_text_file("physicalagent/context/guides/PRO_HYBRID_GUIDE.md")
+1. read_text_file("physical_agent/context/memory/MEMORY.md")
+2. read_text_file("physical_agent/context/guides/STRICT_HYBRID_GUIDE.md")
+3. read_text_file("physical_agent/context/guides/PRO_HYBRID_GUIDE.md")
 4. view_camera_meta() — get the calibration matrices
 5. view_repl_state(step=0) — see the initial scene (both images!)
 6. Look at images_cam/image_cam_00.png; find the target object; back_project() its pixels
@@ -291,13 +291,13 @@ Save artifacts to: {output_dir}
 - audit  filename: {recipe_tag}.json
 
 Suggested first steps:
-1. read_text_file("physicalagent/context/memory/MEMORY.md")
+1. read_text_file("physical_agent/context/memory/MEMORY.md")
    — the index of operating wisdom. Scan ALL lines, then read the
    ~3-5 individual feedback_*.md files (in the same dir) that look
    most relevant to your suite (e.g. for libero_spatial bowl tasks,
    definitely read feedback_bowl_eef_y_offset.md).
-2. read_text_file("physicalagent/context/guides/STRICT_HYBRID_GUIDE.md")
-3. read_text_file("physicalagent/context/guides/PRO_HYBRID_GUIDE.md")
+2. read_text_file("physical_agent/context/guides/STRICT_HYBRID_GUIDE.md")
+3. read_text_file("physical_agent/context/guides/PRO_HYBRID_GUIDE.md")
 4. (optional) list_dir on the appropriate workspace_pro/results_*_pert/
    then read a past recipe_<sim>.jsonl as a starting point — BUT
    re-derive coords from states.json[0] and apply memory offsets, don't
@@ -386,10 +386,10 @@ WORKFLOW
 
 1. READ MEMORY FIRST (the "operating wisdom" — magic numbers + gotchas).
    The snapshot lives IN THE REPO at:
-     `physicalagent/context/memory/MEMORY.md`
+     `physical_agent/context/memory/MEMORY.md`
    (If you are running on the originating machine and want the LIVE
    feed instead, it's at
-   `physicalagent/context/memory/MEMORY.md`,
+   `physical_agent/context/memory/MEMORY.md`,
    but the in-repo snapshot is the portable source of truth.)
    Scan all ~40 lines, then `Read` the 3-5 most relevant feedback_*.md
    for your cell. For bowl→plate spatial tasks ALWAYS read:
@@ -401,9 +401,9 @@ WORKFLOW
    - feedback_no_pi0_end_to_end.md (Rule 1 reminder)
 
 2. READ THE GUIDES (once each):
-   - physicalagent/context/guides/STRICT_HYBRID_GUIDE.md
-   - physicalagent/context/guides/PRO_HYBRID_GUIDE.md
-   - physicalagent/context/guides/env_calibration.md
+   - physical_agent/context/guides/STRICT_HYBRID_GUIDE.md
+   - physical_agent/context/guides/PRO_HYBRID_GUIDE.md
+   - physical_agent/context/guides/env_calibration.md
 
 3. CHECK PAST RECIPES for similar cells:
    - workspace_pro/results_spatial_pert/   (libero_spatial)
@@ -635,13 +635,13 @@ WORKFLOW
 ═══════════════════════════════════════════════════════════════════════
 
 1. READ MEMORY FIRST (operating wisdom — magic numbers + gotchas):
-     `physicalagent/context/memory/MEMORY.md`
+     `physical_agent/context/memory/MEMORY.md`
    Scan it, then `Read` the 3-5 most relevant feedback_*.md for your cell.
 
 2. READ THE GUIDES (once each):
-   - physicalagent/context/guides/STRICT_HYBRID_GUIDE.md
-   - physicalagent/context/guides/PRO_HYBRID_GUIDE.md
-   - physicalagent/context/guides/env_calibration.md
+   - physical_agent/context/guides/STRICT_HYBRID_GUIDE.md
+   - physical_agent/context/guides/PRO_HYBRID_GUIDE.md
+   - physical_agent/context/guides/env_calibration.md
 
 3. USE PAST EXPERIENCE AS A STRATEGY PRIOR (not as coords):
    - workspace_pro/results_object_pert/   and   primitives/results_all_object_new/

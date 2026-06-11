@@ -8,7 +8,7 @@ metadata:
 ---
 
 Solved seed-0 rollouts for libero_10 tasks 0-5 in
-`physicalagent/primitives/results_all_10/{t0,t1,t2,t3,t4,t5}_s0.json` plus
+`physical_agent/primitives/results_all_10/{t0,t1,t2,t3,t4,t5}_s0.json` plus
 `all_rows.json` (2026-05-19).
 
 **Why:** user asked to apply [[STRICT_HYBRID_GUIDE]] to libero_10 tasks 1-3 and

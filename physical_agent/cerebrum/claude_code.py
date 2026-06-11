@@ -16,8 +16,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from physicalagent.cerebrum.base import CerebrumResult
-from physicalagent.config import get_repo_root
+from physical_agent.cerebrum.base import CerebrumResult
+from physical_agent.config import get_repo_root
 
 
 class ClaudeCodeCerebrum:

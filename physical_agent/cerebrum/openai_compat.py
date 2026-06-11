@@ -10,7 +10,7 @@ import json
 import time
 from typing import Any, Callable
 
-from physicalagent.cerebrum.base import CerebrumResult
+from physical_agent.cerebrum.base import CerebrumResult
 
 
 class OpenAICompatibleCerebrum:

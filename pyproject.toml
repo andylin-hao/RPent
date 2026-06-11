@@ -49,11 +49,8 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["physicalagent*"]
+include = ["physical_agent*"]
 exclude = ["tests*", "docs*", "examples*", "docker*", "toolkits*"]
-
-[tool.setuptools.package-data]
-physicalagent = ["**/*.yaml", "**/*.yml"]
 
 [tool.ruff]
 line-length = 88
@@ -61,7 +58,7 @@ indent-width = 4
 target-version = "py311"
 
 [tool.ruff.lint]
-isort = {known-first-party = ["physicalagent"]}
+isort = {known-first-party = ["physical_agent"]}
 select = ["C", "E", "F", "I", "W", "CPY001", "RUF013", "UP006", "PERF102", "PLC1802", "PLC0208", "D", "RUF002", "DOC102", "DOC202", "DOC403", "DOC502"]
 ignore = [
     "C901", # "complex-structure"
@@ -77,7 +74,7 @@ unfixable = []
 
 [tool.ruff.lint.per-file-ignores]
 # Only enable docstring check for the scheduler module for now.
-"!physicalagent/**.py" = ["D", "RUF002"]
+"!physical_agent/**.py" = ["D", "RUF002"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

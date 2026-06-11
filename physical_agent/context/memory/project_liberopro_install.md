@@ -21,9 +21,9 @@ Sanity passed: all 15 perturbation suites instantiate, README §"Sanity check" e
 
 Missing: `libero_spatial_swap` BDDL/init not in git repo; HF dataset `zhouxueyang/LIBERO-Pro` is unreachable (direct HF, hf-mirror.com, ghfast.top all blocked or no-route). Skip this suite or fetch manually on a network with HF access.
 
-Why: needed to start the LIBERO-Pro track per [[liberopro-pro-hybrid-guide]] (physicalagent/context/guides/PRO_HYBRID_GUIDE.md). Hybrid LLM+Pi0.5 evaluation on P1/P2 perturbations.
+Why: needed to start the LIBERO-Pro track per [[liberopro-pro-hybrid-guide]] (physical_agent/context/guides/PRO_HYBRID_GUIDE.md). Hybrid LLM+Pi0.5 evaluation on P1/P2 perturbations.
 
 How to apply: every fresh PRO session must
 - `cd "$PHYSICALAGENT_REPO_ROOT"` (NOT an unrelated checkout; set `PHYSICALAGENT_RLINF_ROOT` / `RLINF_REPO_PATH` explicitly so an older RLinf tree cannot shadow-import first)
 - `export LIBERO_TYPE=pro MUJOCO_GL=egl`
-- launch via `physicalagent/backends/rlinf/repl_driver.py` (now patched, see [[liberopro-driver-patch]]).
+- launch via `physical_agent/backends/rlinf/repl_driver.py` (now patched, see [[liberopro-driver-patch]]).

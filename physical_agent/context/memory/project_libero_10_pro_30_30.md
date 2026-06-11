@@ -13,7 +13,7 @@ hard cells — those do not demonstrate physical manipulation and have been **re
 the codebase** ([[no-teleport-rule]]). The teleport-dependent solves below are no longer
 valid and are being **redone with physics-only primitives**.
 
-Audit JSONs in `physicalagent/primitives/workspace_pro/results_10_pert/10_<pert>_t<N>_s0.json`.
+Audit JSONs in `physical_agent/primitives/workspace_pro/results_10_pert/10_<pert>_t<N>_s0.json`.
 
 ## Cells that used teleport — redo scope (physics-only)
 

@@ -11,7 +11,7 @@ guide is everything you need to know to continue iterating on **strict** hybrid:
 ## Before you start: READ THE AUTO-MEMORY
 
 Past sessions have stored ~20 hard-won lessons in
-`physicalagent/context/memory/`. The index
+`physical_agent/context/memory/`. The index
 file `MEMORY.md` is auto-loaded into your system prompt via CLAUDE.md,
 so the one-line hooks are already visible to you. Before launching a
 driver, **scan those hooks** for entries whose name/description touches
@@ -255,12 +255,12 @@ freely `reset` to retry the same task.
 ```bash
 cd ${PHYSICALAGENT_REPO_ROOT:-$(pwd)}
 REPL_WORKDIR="${PHYSICALAGENT_WORKDIR_PREFIX:-$(python - <<'PY'
-from physicalagent.config import get_default_workdir_prefix
+from physical_agent.config import get_default_workdir_prefix
 print(get_default_workdir_prefix())
 PY
 )}"
 CUDA_VISIBLE_DEVICES=0 python \
-    physicalagent/backends/rlinf/repl_driver.py \
+    physical_agent/backends/rlinf/repl_driver.py \
     --workdir "$REPL_WORKDIR" \
     --suite libero_10 --task <N> --seed 0 --max_episode_steps 5000
 ```
@@ -544,7 +544,7 @@ them. The only motion primitives are the OSC ones (`move_to`, `rotate_wrist`,
 ### File layout (reference)
 
 ```
-physicalagent/primitives/
+physical_agent/primitives/
 ├── primitives.py              # LiberoPrimitiveDriver — OSC move_to, pick,
 │                              # release, set_gripper, rotate_wrist, rotate_pitch.
 │                              # (Teleport methods removed — see Rule 4.)
@@ -858,7 +858,7 @@ Run this at the end of a successful REPL session, before issuing `exit`:
 python - <<'PYEOF'
 import json, os
 WORKDIR = "$REPL_WORKDIR"
-OUTDIR  = "${PHYSICALAGENT_REPO_ROOT:-$(pwd)}/physicalagent/primitives/results_all_10"
+OUTDIR  = "${PHYSICALAGENT_REPO_ROOT:-$(pwd)}/physical_agent/primitives/results_all_10"
 TASK_ID, SEED = 9, 0                                           # ← fill in
 REGIME = "strict"                                               # ← fill in ("strict" or "pi0_doubled" — Rule 1 forbids "pi0_end_to_end")
 NOTES  = "OSC IK barrier at cavity entry; Pi0 full task prompt solved in 186 chunks"
@@ -910,7 +910,7 @@ captures every `move_to` step in execution order.
 
 Once a (task, seed) pair is solved interactively, copy the working command
 sequence (from `recipe_t<N>_s<M>.jsonl`) into a small Python module under
-`physicalagent/primitives/strategies/`:
+`physical_agent/primitives/strategies/`:
 
 ```python
 # strategies/t9_strict_attempt.py — example shell
@@ -1129,7 +1129,7 @@ the task as a strict failure in `strategy_notes`.
 ## Memory files to read
 
 **You have access to a persistent auto-memory at**
-`physicalagent/context/memory/`. The index is
+`physical_agent/context/memory/`. The index is
 `MEMORY.md` (one-line hooks per memory, auto-injected by CLAUDE.md into
 the system prompt of every new session). Individual entries live as
 `feedback_*.md` / `project_*.md` / `reference_*.md`.
@@ -1225,12 +1225,12 @@ Cross-suite progress + non-obvious past failures:
 ## TL;DR launch checklist
 
 ```
-0. cat physicalagent/context/memory/MEMORY.md
+0. cat physical_agent/context/memory/MEMORY.md
    → scan one-line hooks; Read matching .md files for relevant fixes.
 1. cd ${PHYSICALAGENT_REPO_ROOT:-$(pwd)}
 2. Bash run_in_background:true
      CUDA_VISIBLE_DEVICES=0 python \
-         physicalagent/backends/rlinf/repl_driver.py \
+         physical_agent/backends/rlinf/repl_driver.py \
          --suite libero_10 --task <N> --seed 0 --max_episode_steps 5000
 3. Bash run_in_background:true (wait for states.json)
      until [ -f $REPL_WORKDIR/states.json ] && \
@@ -1272,7 +1272,7 @@ Cross-suite progress + non-obvious past failures:
 11. Write exit. Move on to next task.
 12. **Memory write-back**: if you discovered a non-obvious fix or env
      quirk that took >2 iterations to diagnose, save it as
-     `physicalagent/context/memory/feedback_<name>.md`
+     `physical_agent/context/memory/feedback_<name>.md`
      (YAML frontmatter: `name`, `description`, `type: feedback`; body
      leads with the rule, then `**Why:**` and `**How to apply:**` lines)
      AND append a one-line hook to `MEMORY.md`. Next session reads it

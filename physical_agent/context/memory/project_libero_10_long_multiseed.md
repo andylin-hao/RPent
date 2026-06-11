@@ -16,7 +16,7 @@ replacement entry point: `scripts/libero/run_pro_sweep.sh` with
 **Result: 300/300 = 100%** (task 100, swap 100, lan 100) vs Pi0 fullshot baseline
 **85/300 (28%)**. Starkest gap = swap (Pi0 2/100, fixtures moved) → hybrid perfect.
 
-Output: `physicalagent/primitives/workspace_pro/multi_seed_exp/long/`
+Output: `physical_agent/primitives/workspace_pro/multi_seed_exp/long/`
 (FINAL_SUMMARY.md, audits + recipe_*.jsonl). Baseline: `../long_pi0_baseline/`.
 
 **0 genuine policy failures.** First pass was 266/300 raw (90%); all 34 non-successes

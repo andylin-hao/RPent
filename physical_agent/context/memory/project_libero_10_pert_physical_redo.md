@@ -35,7 +35,7 @@ unreachable. The 4 blocked cells stand as honest strict_failure_physical.
 
 The 4 blocked cells are exactly the ones the teleport originally faked (articulate_to OVERSHOOT
 for the qpos>0 drawer close; set_object_pose for the past-reach cook). Audits + recipes in
-`physicalagent/primitives/workspace_pro/results_10_pert/`. Lessons in [[no-teleport-rule]],
+`physical_agent/primitives/workspace_pro/results_10_pert/`. Lessons in [[no-teleport-rule]],
 [[stove-turnoff-strict]], [[scripted-pick-limits]], [[feedback_osc_push_mujoco_nan]].
 
 **2026-05-27 SESSION — two of the four "blocked" cells re-examined and largely overturned:**

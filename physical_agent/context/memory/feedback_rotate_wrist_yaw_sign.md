@@ -7,7 +7,7 @@ metadata:
   originSessionId: 0074d341-bdcd-41b6-b40e-036b75648dc3
 ---
 
-**The bug**: in `physicalagent/primitives/primitives.py:rotate_wrist`, world yaw was being extracted via `scipy.spatial.transform.Rotation.from_quat(quat).as_euler('zyx')[0]`. For the Panda gripper-down home pose where the eef rotation matrix has `R[2,2] ≈ -1`, this returns the **negative** of the true world yaw. Symptom: calling `rotate_wrist(delta_yaw=+1.57)` rotated the wrist by ~−π/2 instead of +π/2.
+**The bug**: in `physical_agent/primitives/primitives.py:rotate_wrist`, world yaw was being extracted via `scipy.spatial.transform.Rotation.from_quat(quat).as_euler('zyx')[0]`. For the Panda gripper-down home pose where the eef rotation matrix has `R[2,2] ≈ -1`, this returns the **negative** of the true world yaw. Symptom: calling `rotate_wrist(delta_yaw=+1.57)` rotated the wrist by ~−π/2 instead of +π/2.
 
 **Why**: the Z-Y-X intrinsic Euler decomposition picks a chart where γ ≈ π (gripper-down flip around X), and α (the "yaw" component) is α = −φ_world rather than +φ_world. Numerically you can verify with `scipy.spatial.transform.Rotation.from_matrix(np.array([[cos φ, sin φ, 0], [sin φ, −cos φ, 0], [0, 0, −1]])).as_euler('zyx')` — first component comes out as `−φ`.
 

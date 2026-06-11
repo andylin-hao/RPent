@@ -20,13 +20,13 @@ os.environ.setdefault("ROBOT_PLATFORM", "LIBERO")
 import imageio.v2 as imageio
 import torch
 
-from physicalagent.backends import add_external_rlinf_to_path
-from physicalagent.config import get_pi05_checkpoint_path, get_repo_root
+from physical_agent.backends import add_external_rlinf_to_path
+from physical_agent.config import get_pi05_checkpoint_path, get_repo_root
 
 PHYSICALAGENT_ROOT = get_repo_root()
 add_external_rlinf_to_path(PHYSICALAGENT_ROOT)
 
-from physicalagent.backends.rlinf.primitives import (  # noqa: E402
+from physical_agent.backends.rlinf.primitives import (  # noqa: E402
     LiberoPrimitiveDriver,
     build_env_cfg,
     build_model_cfg,

@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 import anthropic
 
-from physicalagent.cerebrum.base import Cerebrum, CerebrumResult
+from physical_agent.cerebrum.base import Cerebrum, CerebrumResult
 
 
 class AnthropicCerebrum:

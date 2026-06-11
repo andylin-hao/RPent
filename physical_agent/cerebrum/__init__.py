@@ -1,5 +1,5 @@
 """Cerebrum — high-level reasoning/planning backends for the agent loop."""
 
-from physicalagent.cerebrum.base import Cerebrum, CerebrumResult  # noqa: F401
-from physicalagent.cerebrum.codex import CodexCerebrum  # noqa: F401
-from physicalagent.cerebrum.openai_compat import OpenAICompatibleCerebrum  # noqa: F401
+from physical_agent.cerebrum.base import Cerebrum, CerebrumResult  # noqa: F401
+from physical_agent.cerebrum.codex import CodexCerebrum  # noqa: F401
+from physical_agent.cerebrum.openai_compat import OpenAICompatibleCerebrum  # noqa: F401

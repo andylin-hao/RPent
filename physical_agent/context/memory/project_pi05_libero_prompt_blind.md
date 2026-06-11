@@ -7,7 +7,7 @@ metadata:
   originSessionId: 9df802c0-b380-4d01-8d48-706e324854e2
 ---
 
-`pi05_libero130_fullshot/30000` on libero_spatial tasks 0/1/2 (3 seeds each, 27 rollouts total via `physicalagent/primitives/test_pick_generalization.py`):
+`pi05_libero130_fullshot/30000` on libero_spatial tasks 0/1/2 (3 seeds each, 27 rollouts total via `physical_agent/primitives/test_pick_generalization.py`):
 
 - `full` prompt: 9/9 libero_term=True (baseline works)
 - `pick_only` ("pick up the {OBJ}" — sub-instruction): 9/9 pick stroke 0.248–0.273 m, gripper closed
@@ -20,4 +20,4 @@ metadata:
 **How to apply:**
 - For libero_spatial: `driver.pick(...)` works reliably regardless of `object_text` — usable as a "trigger a pick" executor in primitive-DSL plans, but do not rely on prompt to disambiguate.
 - To test true prompt-following: switch to `libero_object` (8 distinct items in one scene), where vision alone cannot solve the task. Same driver, just `task_suite_name="libero_object"`.
-- Driver lives under `physicalagent/backends/rlinf/`.
+- Driver lives under `physical_agent/backends/rlinf/`.

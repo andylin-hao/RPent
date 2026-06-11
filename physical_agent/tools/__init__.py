@@ -1,6 +1,6 @@
 """Agent tool declarations, handlers, and result serialization."""
 
-from physicalagent.tools.repl import (  # noqa: F401
+from physical_agent.tools.repl import (  # noqa: F401
     BLOCKED_ACTIONS,
     TOOLS_SPEC,
     TOOL_HANDLERS,

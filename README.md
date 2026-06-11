@@ -8,7 +8,7 @@ To begin with,
 1. clone RLinf and physical agent side-by-side.
 ```bash
 mkdir workspace && cd workspace
-# physicalagent depends on a forked branch of RLinf; we plan to merge the branch back to main after some more iterations
+# PhysicalAgent depends on a forked branch of RLinf; we plan to merge the branch back to main after some more iterations
 git clone https://github.com/jx-qiu/RLinf -b feature/physicalagent rlinf
 git clone https://github.com/jx-qiu/PhysicalAgent physicalagent
 ```
@@ -19,7 +19,7 @@ bash requirements/install.sh embodied --env libero --model openpi --use-mirror -
 cd ..
 source .venv-opi-libero/bin/activate
 ```
-3. install additional physicalagent dependencies on top of the above venv.
+3. install additional PhysicalAgent dependencies on top of the above venv.
 ```bash
 cd physicalagent
 uv sync --active --inexact
@@ -39,10 +39,10 @@ export CUDA_DEVICE=0
 
 # run a test task (libero_object_swap task 2, seed 0, with perception enabled), using an anthropic "claude-opus-4-7" model and a max token limit of 8192.
 # alternatively, you can specify openai-compatible models using --cerebrum openai_compat --model xxx.
-python physicalagent/apps/libero/runner.py --suite libero_object_swap --task 2 --seed 0 --perception --cerebrum anthropic --model claude-opus-4-7 --max_tokens 8192
+python physical_agent/apps/libero/runner.py --suite libero_object_swap --task 2 --seed 0 --perception --cerebrum anthropic --model claude-opus-4-7 --max_tokens 8192
 
 # run 8 parallel evaluation on libero_object_swap tasks 0-2, with perception enabled, on four cuda devices, using an openai-compatible "deepseek-v4-pro" model and a max token limit of 8192.
-python physicalagent/apps/libero/parallel_launch.py \
+python physical_agent/apps/libero/parallel_launch.py \
     --suite libero_object_swap --task 2 \
     --seeds 0 1 2 3 4 5 6 7 \
     --cuda_devices 0 1 2 3 \

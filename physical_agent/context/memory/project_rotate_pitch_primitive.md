@@ -7,7 +7,7 @@ metadata:
   originSessionId: 0074d341-bdcd-41b6-b40e-036b75648dc3
 ---
 
-**What it does:** new primitive in `physicalagent/primitives/primitives.py:rotate_pitch`. Tilts the gripper around the world X axis, holding xyz/yaw constant. Wired into `interactive_driver.py` as `{"action": "rotate_pitch", "delta_pitch": ..., "gripper": ...}`.
+**What it does:** new primitive in `physical_agent/primitives/primitives.py:rotate_pitch`. Tilts the gripper around the world X axis, holding xyz/yaw constant. Wired into `interactive_driver.py` as `{"action": "rotate_pitch", "delta_pitch": ..., "gripper": ...}`.
 
 **Why:** t9 (mug → microwave cavity) needed the gripper to "lean forward" so the Panda wrist body fits through the 14-cm-tall cavity opening at z∈[0.944, 1.088]. Without pitch tilt the wrist body (~3cm above eef) hits the cavity ceiling. With pitch=+0.9 rad (~51°) the wrist body translates ~3cm in +y and ~1cm down, allowing the gripper to thread through.
 

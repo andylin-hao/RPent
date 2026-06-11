@@ -23,8 +23,8 @@ If an external memory source accumulates new entries over time, set
 `PHYSICALAGENT_MEMORY_SOURCE` and re-sync the in-repo snapshot:
 
 ```bash
-cp -f "${PHYSICALAGENT_MEMORY_SOURCE:-/path/to/source/memory}"/*.md physicalagent/context/memory/
-git add physicalagent/context/memory/
+cp -f "${PHYSICALAGENT_MEMORY_SOURCE:-/path/to/source/memory}"/*.md physical_agent/context/memory/
+git add physical_agent/context/memory/
 git commit -m "memory_snapshot: sync from live <date>"
 ```
 
@@ -33,9 +33,9 @@ to the experiments captured in this repo.
 
 ## Where the prompts point
 
-- `physicalagent/context/libero_prompts.py` contains the full Claude Code
+- `physical_agent/context/libero_prompts.py` contains the full Claude Code
   prompts and points agents at this directory relative to the repo root.
-- Runners use `physicalagent.config.get_memory_dir()` and grant this directory
+- Runners use `physical_agent.config.get_memory_dir()` and grant this directory
   to `claude -p` with `--add-dir`.
 
 If you fork the repo and put it at a different absolute path, the

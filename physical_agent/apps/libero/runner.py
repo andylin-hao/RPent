@@ -21,8 +21,8 @@ import time
 from pathlib import Path
 
 # Auto-detect project paths: this file is at
-# <repo>/physicalagent/apps/libero/runner.py
-from physicalagent.config import (
+# <repo>/physical_agent/apps/libero/runner.py
+from physical_agent.config import (
     get_anthropic_api_key,
     get_anthropic_base_url,
     get_anthropic_model,
@@ -41,11 +41,11 @@ from physicalagent.config import (
 REPO_ROOT = get_repo_root()
 DEFAULT_DRIVER_SCRIPT = str(get_repl_driver_script())
 
-from physicalagent.cerebrum.anthropic import AnthropicCerebrum  # noqa: E402
-from physicalagent.cerebrum.claude_code import ClaudeCodeCerebrum  # noqa: E402
-from physicalagent.cerebrum.codex import CodexCerebrum  # noqa: E402
-from physicalagent.cerebrum.openai_compat import OpenAICompatibleCerebrum  # noqa: E402
-from physicalagent.context.libero_prompts import (  # noqa: E402
+from physical_agent.cerebrum.anthropic import AnthropicCerebrum  # noqa: E402
+from physical_agent.cerebrum.claude_code import ClaudeCodeCerebrum  # noqa: E402
+from physical_agent.cerebrum.codex import CodexCerebrum  # noqa: E402
+from physical_agent.cerebrum.openai_compat import OpenAICompatibleCerebrum  # noqa: E402
+from physical_agent.context.libero_prompts import (  # noqa: E402
     CLAUDE_CODE_PERCEPTION_PROMPT_TEMPLATE,
     CLAUDE_CODE_PROMPT_TEMPLATE,
     INITIAL_USER_TEMPLATE,
@@ -54,8 +54,8 @@ from physicalagent.context.libero_prompts import (  # noqa: E402
     SYSTEM_PROMPT,
     format_claude_code_prompt,
 )
-from physicalagent.logging import make_log_dir  # noqa: E402
-from physicalagent.tools.repl import (  # noqa: E402
+from physical_agent.logging import make_log_dir  # noqa: E402
+from physical_agent.tools.repl import (  # noqa: E402
     execute_tool,
     get_tools_spec,
     tool_result_to_content_blocks,
@@ -388,7 +388,7 @@ def run_one_cell(
         except ImportError as e:
             raise RuntimeError(
                 "openai package is required for --cerebrum openai_compat; "
-                "install physicalagent with updated dependencies or run "
+                "install physical_agent with updated dependencies or run "
                 "`pip install openai`."
             ) from e
 

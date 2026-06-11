@@ -9,7 +9,7 @@ metadata:
 
 libero_spatial all 10 base tasks audited at seed=0 across all four
 LIBERO-Pro perturbations on 2026-05-21. Saved in
-`physicalagent/primitives/workspace_pro/results_spatial_pert/`.
+`physical_agent/primitives/workspace_pro/results_spatial_pert/`.
 
 **Why:** This closes the spatial axis under PRO at seed=0 — the
 LIBERO-Pro paper headlines were generated from the {_task, _swap}

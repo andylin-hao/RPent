@@ -34,8 +34,8 @@ from pathlib import Path
 os.environ.setdefault("MUJOCO_GL", "egl")
 os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 
-from physicalagent.config import get_default_workdir_prefix, get_repo_root
-from physicalagent.backends import add_external_rlinf_to_path
+from physical_agent.config import get_default_workdir_prefix, get_repo_root
+from physical_agent.backends import add_external_rlinf_to_path
 
 PHYSICALAGENT_ROOT = get_repo_root()
 RLINF_REPO_PATH = add_external_rlinf_to_path(PHYSICALAGENT_ROOT)
@@ -45,7 +45,7 @@ import imageio.v2 as imageio
 import numpy as np
 import torch
 
-from physicalagent.backends.rlinf.primitives import (
+from physical_agent.backends.rlinf.primitives import (
     CHECKPOINT_PATH,
     LiberoPrimitiveDriver,
     build_env_cfg,
@@ -340,7 +340,7 @@ def execute(driver, cmd: dict, workdir: str, step_idx: int):
         log["result"] = {"name": "start_recording"}
     elif action == "save_video":
         path = cmd.get("path",
-            str(PHYSICALAGENT_ROOT / "physicalagent" / "primitives" / "videos" / "last_run.mp4"))
+            str(PHYSICALAGENT_ROOT / "physical_agent" / "primitives" / "videos" / "last_run.mp4"))
         log["result"] = driver.stop_recording_and_save(
             path, fps=cmd.get("fps", 20),
             keep_recording=cmd.get("keep_recording", False),

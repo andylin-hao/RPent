@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from physicalagent.cerebrum.openai_compat import (
+from physical_agent.cerebrum.openai_compat import (
     OpenAICompatibleCerebrum,
     _format_tool_result_for_openai,
     anthropic_tools_to_openai_tools,

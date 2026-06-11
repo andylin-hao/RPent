@@ -18,17 +18,17 @@ def get_repo_root() -> Path:
     """Return the PhysicalAgent repository root directory.
 
     Resolution: ``PHYSICALAGENT_REPO_ROOT`` env var, then the parent of
-    the ``physicalagent/`` package directory.
+    the ``physical_agent/`` package directory.
     """
     env = os.environ.get("PHYSICALAGENT_REPO_ROOT")
     if env:
         return Path(env).expanduser().resolve()
-    # config.py lives at <repo>/physicalagent/config.py
+    # config.py lives at <repo>/physical_agent/config.py
     return Path(__file__).resolve().parents[1]
 
 
 def get_package_root() -> Path:
-    """Return the ``physicalagent/`` package directory."""
+    """Return the ``physical_agent/`` package directory."""
     return Path(__file__).resolve().parent
 
 
@@ -37,15 +37,15 @@ def get_package_root() -> Path:
 # ============================================================================
 
 def get_memory_dir() -> Path:
-    return get_repo_root() / "physicalagent" / "context" / "memory"
+    return get_repo_root() / "physical_agent" / "context" / "memory"
 
 
 def get_guides_dir() -> Path:
-    return get_repo_root() / "physicalagent" / "context" / "guides"
+    return get_repo_root() / "physical_agent" / "context" / "guides"
 
 
 def get_backends_dir() -> Path:
-    return get_repo_root() / "physicalagent" / "backends" / "rlinf"
+    return get_repo_root() / "physical_agent" / "backends" / "rlinf"
 
 
 def get_repl_driver_script() -> Path:
@@ -78,7 +78,7 @@ def get_rlinf_repo_path() -> Path | None:
 
 def get_default_workdir_prefix() -> str:
     """Default prefix for REPL working directories."""
-    default = Path(tempfile.gettempdir()) / "physicalagent_repl"
+    default = Path(tempfile.gettempdir()) / "physical_agent_repl"
     return os.environ.get("PHYSICALAGENT_WORKDIR_PREFIX", str(default))
 
 

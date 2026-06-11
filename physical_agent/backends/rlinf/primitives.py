@@ -6,7 +6,7 @@ the VLA, runs a fixed-length action chunk loop until a termination predicate
 fires, and reports diagnostics (lift height, gripper opening, official success).
 
 Usage (single-task smoke run):
-    python -m physicalagent.backends.rlinf.primitives --task 0 --mode subinstr --seed 0
+    python -m physical_agent.backends.rlinf.primitives --task 0 --mode subinstr --seed 0
 
 The driver bypasses Worker / Cluster — it constructs LiberoEnv and Pi0.5 directly
 so the same code can be reused for offline evaluation, RL warm-starts, or
@@ -26,8 +26,8 @@ from typing import Any
 os.environ.setdefault("MUJOCO_GL", "egl")
 os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 
-from physicalagent.config import get_repo_root, get_pi05_checkpoint_path
-from physicalagent.backends import add_external_rlinf_to_path
+from physical_agent.config import get_repo_root, get_pi05_checkpoint_path
+from physical_agent.backends import add_external_rlinf_to_path
 
 PHYSICALAGENT_ROOT = get_repo_root()
 RLINF_REPO_PATH = add_external_rlinf_to_path(PHYSICALAGENT_ROOT)

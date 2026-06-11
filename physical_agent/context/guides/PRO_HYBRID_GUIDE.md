@@ -221,13 +221,13 @@ Replace `spatial` with `object`, `goal`, or `10` for the other base suites.
 ps -ef | grep repl_driver | grep -v grep | awk '{print $2}' | xargs -r kill
 cd ${PHYSICALAGENT_REPO_ROOT:-$(pwd)}
 REPL_WORKDIR="${PHYSICALAGENT_WORKDIR_PREFIX:-$(python - <<'PY'
-from physicalagent.config import get_default_workdir_prefix
+from physical_agent.config import get_default_workdir_prefix
 print(get_default_workdir_prefix())
 PY
 )}"
 rm -rf "$REPL_WORKDIR"
 LIBERO_TYPE=pro CUDA_VISIBLE_DEVICES=0 python \
-  physicalagent/backends/rlinf/repl_driver.py \
+  physical_agent/backends/rlinf/repl_driver.py \
   --suite libero_spatial_task --task 0 --seed 0 --max_episode_steps 600
 # (run in background; wait for $REPL_WORKDIR/states.json)
 ```
@@ -263,10 +263,10 @@ For the same (suite, task, seed), run the Pi0 baseline:
 ```bash
 cd ${PHYSICALAGENT_REPO_ROOT:-$(pwd)}
 LIBERO_TYPE=pro CUDA_VISIBLE_DEVICES=0 python \
-  physicalagent/primitives/pi0_baseline.py \
+  physical_agent/primitives/pi0_baseline.py \
   --suite libero_spatial_task --task 0 --seed 0 --max_chunks 60 \
-  --out physicalagent/primitives/workspace_pro/results_spatial_pert/baseline_pi0_spatial_task_t0_s0.json \
-  --save_image_dir physicalagent/primitives/workspace_pro/results_spatial_pert/baseline_imgs/task
+  --out physical_agent/primitives/workspace_pro/results_spatial_pert/baseline_pi0_spatial_task_t0_s0.json \
+  --save_image_dir physical_agent/primitives/workspace_pro/results_spatial_pert/baseline_imgs/task
 ```
 
 Runtime: ~80s model load + 10–25s rollout. Reads the perturbed
@@ -349,7 +349,7 @@ LIBERO_TYPE=pro python -c \
 # 2. Start a hybrid driver (background)
 cd ${PHYSICALAGENT_REPO_ROOT:-$(pwd)}
 LIBERO_TYPE=pro CUDA_VISIBLE_DEVICES=0 python \
-  physicalagent/backends/rlinf/repl_driver.py \
+  physical_agent/backends/rlinf/repl_driver.py \
   --suite libero_spatial_task --task <N> --seed 0 --max_episode_steps 600
 
 # 3. Wait for readiness
@@ -361,9 +361,9 @@ until [ -f $REPL_WORKDIR/states.json ] && [ -s $REPL_WORKDIR/states.json ]; do s
 
 # 7. Run Pi0 baseline for the same (suite, task, seed)
 LIBERO_TYPE=pro CUDA_VISIBLE_DEVICES=0 python \
-  physicalagent/primitives/pi0_baseline.py \
+  physical_agent/primitives/pi0_baseline.py \
   --suite libero_spatial_task --task <N> --seed 0 --max_chunks 60 \
-  --out physicalagent/primitives/workspace_pro/results_spatial_pert/baseline_pi0_spatial_task_t<N>_s0.json
+  --out physical_agent/primitives/workspace_pro/results_spatial_pert/baseline_pi0_spatial_task_t<N>_s0.json
 ```
 
 When in doubt about a primitive or a rule, the source of truth is

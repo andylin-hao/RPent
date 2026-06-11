@@ -7,7 +7,7 @@ metadata:
   originSessionId: 82a57f3e-217b-4ac0-984d-bebcc7d3eb36
 ---
 
-`physicalagent.apps.libero.runner` passes `physicalagent/context/memory/` to
+`physical_agent.apps.libero.runner` passes `physical_agent/context/memory/` to
 `ClaudeCodeCerebrum` as an extra `--add-dir`. This is a **versioned in-repo
 copy**, not a private Claude memory directory.
 
@@ -16,7 +16,7 @@ of what I edit live mid-sweep).
 
 **How to apply:** any feedback/magic-number memory written AFTER the last snapshot sync
 is invisible to workers. Before launching a sweep that depends on a new lesson, re-sync:
-`cp -f "${PHYSICALAGENT_MEMORY_SOURCE:-/path/to/source/memory}"/*.md physicalagent/context/memory/`
+`cp -f "${PHYSICALAGENT_MEMORY_SOURCE:-/path/to/source/memory}"/*.md physical_agent/context/memory/`
 (2026-05-23: snapshot was 2 files + MEMORY.md index behind source; re-synced. `cp` leaves
 extra stale files — e.g. an unrelated README.md — harmless.)
 

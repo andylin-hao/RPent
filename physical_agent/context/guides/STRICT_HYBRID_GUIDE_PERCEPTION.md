@@ -43,7 +43,7 @@ interface is unconditional once the driver is launched).
 Operating wisdom lives in the in-repo snapshot:
 
 ```
-physicalagent/context/memory/MEMORY.md
+physical_agent/context/memory/MEMORY.md
 ```
 
 Scan the ~40 one-line hooks. For perception cells **always** open:
@@ -129,13 +129,13 @@ via env: `CUDA_DEVICE=2 MODEL=claude-opus-4-7 OUTPUT_DIR=/path bash run_percepti
 ```bash
 cd ${PHYSICALAGENT_REPO_ROOT:-$(pwd)}
 REPL_WORKDIR="${PHYSICALAGENT_WORKDIR_PREFIX:-$(python - <<'PY'
-from physicalagent.config import get_default_workdir_prefix
+from physical_agent.config import get_default_workdir_prefix
 print(get_default_workdir_prefix())
 PY
 )}"
 CUDA_VISIBLE_DEVICES=0 LIBERO_TYPE=pro MUJOCO_GL=egl \
   python \
-    physicalagent/backends/rlinf/repl_driver.py \
+    physical_agent/backends/rlinf/repl_driver.py \
     --suite libero_object_swap --task 0 --seed 0 \
     --workdir $REPL_WORKDIR \
     --max_episode_steps 600 \

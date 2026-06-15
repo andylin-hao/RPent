@@ -6,7 +6,7 @@ end-to-end before you launch a driver.
 
 This document layers on top of the base hybrid playbook. Read **both**:
 
-- [`../STRICT_HYBRID_GUIDE.md`](../STRICT_HYBRID_GUIDE.md) — primitive
+- [`./STRICT_HYBRID_GUIDE.md`](./STRICT_HYBRID_GUIDE.md) — primitive
   vocabulary, the three Rules (0/1/2), command JSON schemas, mental model,
   worked examples on standard LIBERO.
 - **This file** — LIBERO-Pro–specific setup, the four perturbation axes,
@@ -363,5 +363,5 @@ LIBERO_TYPE=pro CUDA_VISIBLE_DEVICES=0 python \
 ```
 
 When in doubt about a primitive or a rule, the source of truth is
-[`../STRICT_HYBRID_GUIDE.md`](../STRICT_HYBRID_GUIDE.md). This guide only
+[`./STRICT_HYBRID_GUIDE.md`](./STRICT_HYBRID_GUIDE.md). This guide only
 adds; it does not override.

@@ -1,4 +1,4 @@
-You are an LLM-in-the-loop hybrid driver for the LIBERO PRO benchmark, running
+You are an LLM-in-the-loop hybrid driver for the @ENV_DISPLAY_NAME@ benchmark, running
 in PERCEPTION-ISOLATED mode: you are NOT given object world coordinates. You
 must localize objects yourself from the camera image + depth + calibration.
 
@@ -13,7 +13,7 @@ Pi0.5 loaded and a single-env LIBERO sim. It communicates with you via the
   to issue one primitive.
 - The driver consumes it and writes:
     `{OUTPUT_DIR}/states.json`                 — top-level JSON array; each entry has
-                                              step_idx, libero_terminated, state (robot
+                                              step_idx, @TERMINATION_FIELD@, state (robot
                                               proprioception + object_names; NO object
                                               coords), command, result, elapsed_s
     `{OUTPUT_DIR}/images/image_NN.png`         — agentview RGB, 180°-rotated (Pi0 frame; do NOT
@@ -25,7 +25,7 @@ Pi0.5 loaded and a single-env LIBERO sim. It communicates with you via the
 - NN is zero-padded sequential (`01`, `02`, ...). Initial state is step `00`,
   ALREADY ON DISK (read it now).
 
-YOUR GOAL: produce `state.libero_terminated == true` in a single episode.
+YOUR GOAL: produce `@STATE_TERMINATION_FIELD@ == true` in a single episode.
 
 ═══════════════════════════════════════════════════════════════════════
 CELL
@@ -109,9 +109,9 @@ WORKFLOW
    Scan it, then `Read` the 3-5 most relevant feedback_*.md for your cell.
 
 2. READ THE GUIDES (once each):
-   - physical_agent/context/guides/STRICT_HYBRID_GUIDE.md
-   - physical_agent/context/guides/PRO_HYBRID_GUIDE.md
-   - physical_agent/context/guides/env_calibration.md
+   - @STRICT_GUIDE_PATH@
+   - @PRO_GUIDE_PATH@
+   - @ENV_CALIBRATION_GUIDE_PATH@
 
 3. USE PAST EXPERIENCE AS A STRATEGY PRIOR (not as coords):
    - workspace_pro/results_object_pert/   and   primitives/results_all_object_new/
@@ -144,15 +144,15 @@ WORKFLOW
    re-pi0_pick on the next prompt-ladder rung; split long traversals into <0.30
    xy waypoints; for a door/drawer/knob use a SHORT capped OSC push or pi0_doubled
    (never one long push — it NaNs MuJoCo). If genuinely unreachable, write an
-   honest stuck-audit (libero_terminated:false) — never warp.
+   honest stuck-audit (@TERMINATION_FIELD@:false) — never warp.
 
-8. WHEN state.libero_terminated == True:
+8. WHEN @SUCCESS_CONDITION@:
    a. Write the working command sequence to {OUTPUT_DIR}/recipe_{TAG}.jsonl.
    b. Write audit {OUTPUT_DIR}/{TAG}.json with: suite, task_id, seed,
       regime:"strict_perception", strategy_notes (incl. how you localized),
-      pick_result, final_state (latest states.json entry's `state`), libero_terminated:true.
+      pick_result, final_state (latest states.json entry's `state`), @TERMINATION_FIELD@:true.
    c. Stop.
-   If unrecoverable, write {TAG}.json with libero_terminated:false +
+   If unrecoverable, write {TAG}.json with @TERMINATION_FIELD@:false +
    strategy_notes describing what you tried. Then stop.
 
 ═══════════════════════════════════════════════════════════════════════

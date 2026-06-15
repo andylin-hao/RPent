@@ -31,17 +31,9 @@ from physical_agent.driver_client import (
     RemoteEnvProxy,
 )
 from physical_agent.tools.common import _output_dir_desc, _require_output_dir
-from physical_agent.utils.config import get_repo_root
 from physical_agent.utils.logging import get_logger
 
 logger = get_logger("libero")
-
-_REPO_ROOT = get_repo_root()
-
-
-# ---------------------------------------------------------------------------
-# Env + model interface (minimal contract consumed by LiberoPrimitiveDriver)
-# ---------------------------------------------------------------------------
 
 
 class EnvInterface(Protocol):
@@ -53,7 +45,7 @@ class EnvInterface(Protocol):
     """
 
     def reset(self) -> tuple[dict, Any]:
-        """Reset the env. Returns ``(obs, info)``."""
+        """Reset the environment."""
 
     def step(
         self, action: np.ndarray
@@ -121,11 +113,6 @@ def _normalize_xyz(xyz):
             'xyz must be a JSON array of three numbers, e.g. "xyz":[-0.05,0,0.3]'
         )
     return [float(v) for v in xyz]
-
-
-# ---------------------------------------------------------------------------
-# Primitive driver
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -205,8 +192,6 @@ class LiberoPrimitiveDriver:
             self._frames = []
         return {"path": path, "n_frames": n}
 
-    # ---- helpers ----
-
     def _state(self, obs):
         s = _as_numpy_array(obs["states"][self.env_idx])
         return {
@@ -225,16 +210,12 @@ class LiberoPrimitiveDriver:
         gp = self._state(obs)["gripper_qpos"]
         return float(abs(gp[0]) + abs(gp[1]))
 
-    # ---- reset ----
-
     def reset(self):
         obs, info = self.env.reset()
         self._last_obs = obs
         self._start_eef_z = self._eef_z(obs)
         self._libero_terminated = False
         return obs, info
-
-    # ---- VLM chunk step (used by pick / place) ----
 
     def _vlm_chunk(self, instruction: str):
         """One model forward + ``chunk_size`` env steps. Overrides prompt."""
@@ -265,8 +246,6 @@ class LiberoPrimitiveDriver:
         if original_td is not None:
             self._last_obs["task_descriptions"] = original_td
         return self._last_obs
-
-    # ---- primitives ----
 
     def pi0_pick(
         self,
@@ -408,8 +387,6 @@ class LiberoPrimitiveDriver:
             libero_terminated=self._libero_terminated,
             diagnostics={"release_thresh": release_thresh},
         )
-
-    # ---- scripted primitives (no VLM) ----
 
     def move_to(
         self,

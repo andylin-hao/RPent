@@ -27,29 +27,7 @@ logger = get_logger("claude")
 
 
 class ClaudeCodeCerebrum:
-    """Cerebrum backed by the ``claude`` CLI (Claude Code subscription).
-
-    Constructor parameters
-    ----------------------
-    output_dir:
-        driver output directory (granted to Claude Code via ``--add-dir``).
-    repo_root:
-        Repository root (used as ``cwd`` for the subprocess so relative
-        paths in the prompt resolve correctly).
-    model:
-        Claude model id passed to ``--model`` (default ``"sonnet"``).
-    allowed_tools:
-        Space-separated tool list for ``--allowedTools``.
-    timeout_s:
-        Hard wall-clock cap on the ``claude -p`` subprocess.
-    max_budget_usd:
-        Passed to ``--max-budget-usd``.
-    extra_dirs:
-        Additional ``--add-dir`` paths (e.g. the memory snapshot).
-    output_path:
-        Optional path for full ``claude -p`` stdout/stderr, matching the
-        legacy ``claude_<tag>.txt`` artifact.
-    """
+    """Cerebrum backed by the ``claude`` CLI."""
 
     def __init__(
         self,
@@ -62,7 +40,6 @@ class ClaudeCodeCerebrum:
         max_budget_usd: float = 10.0,
         extra_dirs: list[str] | None = None,
         output_path: str | Path | None = None,
-        driver_pid: int | None = None,
         enable_mcp: bool = True,
         transport_host: str = "127.0.0.1",
         transport_port: int = 0,
@@ -86,14 +63,6 @@ class ClaudeCodeCerebrum:
         self._hide_object_coords = bool(hide_object_coords)
         self._video_path = video_path
 
-    def set_driver_pid(self, pid: int | None) -> None:
-        """Compatibility no-op for the runner interface."""
-        return None
-
-    def set_driver_process(self, proc: subprocess.Popen | None) -> None:
-        """Compatibility no-op for the runner interface."""
-        return None
-
     def set_socket_endpoint(self, host: str, port: int) -> None:
         """Record the driver socket endpoint discovered after startup."""
         self._transport_host = host
@@ -102,10 +71,6 @@ class ClaudeCodeCerebrum:
     def set_vla_endpoint(self, endpoint: str) -> None:
         """Record the vla_server HTTP endpoint discovered after startup."""
         self._vla_endpoint = endpoint
-
-    # ------------------------------------------------------------------
-    # Cerebrum protocol
-    # ------------------------------------------------------------------
 
     def solve(
         self,
@@ -575,10 +540,6 @@ class _ClaudeCodeStreamRenderer:
             f"out={self._total_output_tokens} tool_calls={self._tool_calls}"
         )
         return " ".join(pieces) + usage + "\n"
-
-
-def _render_stream_line(line: str) -> str:
-    return _ClaudeCodeStreamRenderer(max_turns=80).render(line)
 
 
 def _iter_content_blocks(message: dict[str, Any]):

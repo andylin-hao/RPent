@@ -36,7 +36,6 @@ class CodexCerebrum:
         timeout_s: int = 600,
         extra_dirs: list[str] | None = None,
         output_path: str | Path | None = None,
-        driver_pid: int | None = None,
         enable_mcp: bool = True,
         transport_host: str = "127.0.0.1",
         transport_port: int = 0,
@@ -57,14 +56,6 @@ class CodexCerebrum:
         self._vla_endpoint = vla_endpoint
         self._hide_object_coords = bool(hide_object_coords)
         self._video_path = video_path
-
-    def set_driver_pid(self, pid: int | None) -> None:
-        """Compatibility no-op for the runner interface."""
-        return None
-
-    def set_driver_process(self, proc: subprocess.Popen | None) -> None:
-        """Compatibility no-op for the runner interface."""
-        return None
 
     def set_socket_endpoint(self, host: str, port: int) -> None:
         """Record the driver socket endpoint discovered after startup."""
@@ -495,10 +486,6 @@ class _CodexStreamRenderer:
             return ""
         self._turn += 1
         return f"\n[agent] === turn {self._turn}/{self._max_turns} ===\n[codex] {text}\n"
-
-
-def _render_stream_line(line: str) -> str:
-    return _CodexStreamRenderer(max_turns=80).render(line)
 
 
 def _is_tool_item_type(item_type: str) -> bool:

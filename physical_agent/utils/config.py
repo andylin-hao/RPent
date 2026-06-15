@@ -26,21 +26,12 @@ def get_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def get_package_root() -> Path:
-    """Return the ``physical_agent/`` package directory."""
-    return Path(__file__).resolve().parents[1]
-
-
 # ============================================================================
 # Paths derived from the repo root  (callable so tests can override)
 # ============================================================================
 
 def get_memory_dir() -> Path:
     return get_repo_root() / "logs" / "memory"
-
-
-def get_guides_dir() -> Path:
-    return get_repo_root() / "physical_agent" / "context" / "guides"
 
 
 def get_repl_driver_script() -> Path:

@@ -1,9 +1,4 @@
-"""Per-run log directory helpers (RLinf-style naming convention).
-
-Creates ``logs/YYYYmmdd-HH:MM:SS_<tag>/`` directories. The REPL driver
-writes its outputs (images/, depths/, states.json, episode.mp4, …)
-directly into this directory.
-"""
+"""Per-run log directory helpers."""
 from __future__ import annotations
 
 import datetime
@@ -20,12 +15,7 @@ def make_log_dir(
     repo_root: str | Path | None = None,
     timestamp: str | None = None,
 ) -> Path:
-    """Create and return a per-run ``logs/`` directory.
-
-    Returns ``<repo_root>/logs/<YYYYmmdd-HH:MM:SS>_<suite>_t<task>_s<seed>/``.
-    The directory is created (``parents=True``).  Identifying metadata is
-    encoded in the directory name itself.
-    """
+    """Create ``logs/<timestamp>_<suite>_t<task>_s<seed>/``."""
     if repo_root is None:
         repo_root = get_repo_root()
     repo_root = Path(repo_root)

@@ -217,45 +217,6 @@ def build_app() -> Any:
     return app
 
 
-# ----- subprocess helper --------------------------------------------------
-
-
-def _find_free_port() -> int:
-    import socket as _socket
-
-    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
-
-
-def spawn_local_server(
-    *,
-    host: str = "127.0.0.1",
-    port: int | None = None,
-    model_path: str | None = None,
-):
-    """Spawn a `vla_server` child process bound to ``host:port``.
-
-    Returns ``(base_url, proc)``. ``port`` defaults to a free local port.
-    The caller is responsible for stopping ``proc`` (e.g. ``proc.terminate()``
-    in an ``atexit`` hook). No readiness probe — callers that need to wait
-    for ``/healthz`` should use ``VLAClient.healthz()`` directly.
-    """
-    import subprocess
-
-    bind_port = port if port is not None else _find_free_port()
-    cmd = [
-        sys.executable,
-        str(get_repo_root() / "deployment" / "rlinf" / "vla_server.py"),
-        "--host", host,
-        "--port", str(bind_port),
-    ]
-    if model_path:
-        cmd += ["--model-path", model_path]
-    proc = subprocess.Popen(cmd)
-    return f"http://{host}:{bind_port}", proc
-
-
 # ----- CLI ----------------------------------------------------------------
 
 

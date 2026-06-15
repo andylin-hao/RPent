@@ -11,7 +11,6 @@ Use as a script (see __main__ at the bottom) or import `run_one_cell`.
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import os
 import queue
@@ -69,7 +68,7 @@ from physical_agent.tools import (  # noqa: E402
     get_tools_spec,
     set_driver_client as tools_set_driver_client,
     set_output_dir as tools_set_output_dir,
-    stop_recording_and_save as tools_stop_recording_and_save,  # noqa: F401
+    stop_recording_and_save as tools_stop_recording_and_save,
     tool_result_to_content_blocks,
 )
 from physical_agent.utils import make_log_dir  # noqa: E402
@@ -229,8 +228,8 @@ def start_vla_server(
     Caller is responsible for stopping ``proc`` via :func:`stop_vla_server`.
     """
     if port == 0:
-        import socket as _socket
-        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((host, 0))
             port = int(s.getsockname()[1])
 
@@ -496,19 +495,12 @@ def run_one_cell(
         base_url = base_url or get_openai_compat_base_url()
         if not api_key:
             raise ValueError("api_key is required for openai_compat cerebrum")
-        try:
-            openai_module = importlib.import_module("openai")
-        except ImportError as e:
-            raise RuntimeError(
-                "openai package is required for --cerebrum openai_compat; "
-                "install physical_agent with updated dependencies or run "
-                "`pip install openai`."
-            ) from e
+        import openai
 
         client_kwargs = {"api_key": api_key, "max_retries": 0, "timeout": 120.0}
         if base_url:
             client_kwargs["base_url"] = base_url
-        client = openai_module.OpenAI(**client_kwargs)
+        client = openai.OpenAI(**client_kwargs)
         supports_images = openai_compat_supports_images
         if supports_images is None:
             supports_images = get_openai_compat_supports_images()

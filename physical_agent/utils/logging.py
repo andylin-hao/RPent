@@ -1,20 +1,4 @@
-"""Unified run logger — prints to stdout + records to a log file.
-
-Usage::
-
-    from physical_agent.utils.logging import init_run_logging, get_logger
-
-    # Call once at startup, e.g. after make_log_dir():
-    init_run_logging(log_dir)
-
-    # Then anywhere:
-    logger = get_logger("agent")
-    logger.info("driver ready in %.1fs", elapsed)
-    logger.error("driver exited before becoming ready")
-
-The logger writes human-readable messages to stdout and timestamped,
-machine-parseable records to ``<log_dir>/run.log``.
-"""
+"""Package logger for run output and ``run.log`` files."""
 from __future__ import annotations
 
 import logging
@@ -67,22 +51,7 @@ class _StripPkgPrefixFilter(logging.Filter):
 
 
 def init_run_logging(log_dir: str | Path | None = None) -> None:
-    """Initialise the run logger.
-
-    Handlers are attached to the ``physical_agent`` package logger (not
-    the Python root logger), so only logs emitted via :func:`get_logger`
-    are captured.  Third-party libraries (httpx, anthropic, urllib3, …)
-    propagate to the unconfigured root logger and stay silent.
-
-    Must be called once (typically at process start).  Subsequent calls
-    are no-ops.
-
-    Parameters
-    ----------
-    log_dir:
-        Directory that receives ``run.log``.  When *None* only stdout
-        logging is active.
-    """
+    """Attach stdout and optional file handlers to package loggers."""
     global _log_initialized, _log_dir
 
     if _log_initialized:
@@ -125,21 +94,7 @@ def init_run_logging(log_dir: str | Path | None = None) -> None:
 
 
 def get_logger(name: str = "") -> logging.Logger:
-    """Return a logger namespaced under the ``physical_agent`` package.
-
-    The returned logger inherits handlers from the package logger
-    configured by :func:`init_run_logging`.  Passing an empty string
-    returns the package logger itself.
-
-    Typical usage::
-
-        logger = get_logger("agent")
-        logger.info("driver ready in %.1fs", elapsed)
-
-    or with a dotted name::
-
-        logger = get_logger("anthropic")
-    """
+    """Return a logger below the ``physical_agent`` namespace."""
     if name:
         return logging.getLogger(f"{_PKG_LOGGER_NAME}.{name}")
     return logging.getLogger(_PKG_LOGGER_NAME)

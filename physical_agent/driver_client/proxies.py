@@ -1,13 +1,4 @@
-"""EnvInterface proxy that ships calls over a DriverClient.
-
-The agent process holds a single :class:`LiberoPrimitiveDriver` whose
-``env`` is a :class:`RemoteEnvProxy`. Each call on the proxy serializes
-to one RPC on the bound
-:class:`~physical_agent.driver_client.base.DriverClient` and returns the
-remote method's return value. The ``model`` is supplied directly by the
-runner (see :class:`~physical_agent.driver_client.vla_client.VLAClient`)
-and does not go through a socket proxy.
-"""
+"""Env proxy that forwards calls over a driver client."""
 from __future__ import annotations
 
 from typing import Any
@@ -29,8 +20,7 @@ _TIMEOUT_S = {
 
 
 class RemoteEnvProxy:
-    """Implements ``EnvInterface`` (see :mod:`physical_agent.tools.libero`)
-    by shipping calls over a :class:`DriverClient`."""
+    """Remote implementation of the LIBERO env protocol."""
 
     def __init__(self, client: DriverClient):
         self._client = client

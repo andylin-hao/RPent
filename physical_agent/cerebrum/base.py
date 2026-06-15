@@ -1,17 +1,11 @@
-"""Cerebrum protocol: the high-level reasoning/planning loop.
-
-A cerebrum receives a system prompt, an initial user message, and a set of
-tools, then drives a multi-turn conversation until the task is finished.
-Backends (Anthropic API, Claude Code, OpenAI, local VLM) implement this
-protocol so the runner can swap them without changing the driver lifecycle.
-"""
+"""Shared protocol for high-level reasoning backends."""
 from __future__ import annotations
 
 from typing import Any, Callable, Protocol
 
 
 class CerebrumResult:
-    """Normalised result from a cerebrum invocation."""
+    """Result returned by a cerebrum invocation."""
 
     __slots__ = ("finish_result", "messages", "stats", "error")
 

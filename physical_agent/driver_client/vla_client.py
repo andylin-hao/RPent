@@ -12,6 +12,7 @@ Wire format (see also ``vla_server.py``):
       "instruction": "<task_descriptions[0]>",
       "images": {
         "main":  {"format": "png", "data": "<base64>"},
+        "wrist": {"format": "png", "data": "<base64>"},   # optional
         "extra": {"format": "png", "data": "<base64>"}    # optional
       },
       "state": [[s0..sN]],          # shape [B, state_dim]
@@ -118,13 +119,15 @@ class VLAClient:
         images: dict[str, Any] = {
             "main": {"format": "png", "data": _png_b64(main_images[0])},
         }
-        extra_view = env_obs.get("extra_view_images")
-        if extra_view is not None:
-            extra_arr = _to_numpy(extra_view)
-            if extra_arr.size > 0 and extra_arr.ndim == 4:
-                images["extra"] = {
+        for src_key, wire_key in (("wrist_images", "wrist"), ("extra_view_images", "extra")):
+            view = env_obs.get(src_key)
+            if view is None:
+                continue
+            arr = _to_numpy(view)
+            if arr.size > 0 and arr.ndim == 4:
+                images[wire_key] = {
                     "format": "png",
-                    "data": _png_b64(extra_arr[0]),
+                    "data": _png_b64(arr[0]),
                 }
 
         task_descriptions = env_obs.get("task_descriptions") or [""]

@@ -150,12 +150,19 @@ def _build_env_obs(req: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("'images.main' is required")
     main = _decode_image_block(images["main"])
     main_batch = main[None]
+    # ``wrist_images`` / ``extra_view_images`` must be present even when unused;
+    # downstream policies (e.g. openpi ``obs_processor``) index them directly
+    # rather than ``.get`` and would KeyError on missing keys.
     obs: dict[str, Any] = {
         "main_images": main_batch,
         "task_descriptions": [str(req.get("instruction", ""))]
         * main_batch.shape[0],
+        "wrist_images": None,
         "extra_view_images": None,
     }
+    wrist = images.get("wrist")
+    if isinstance(wrist, dict):
+        obs["wrist_images"] = _decode_image_block(wrist)[None]
     extra = images.get("extra")
     if isinstance(extra, dict):
         obs["extra_view_images"] = _decode_image_block(extra)[None]

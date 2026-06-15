@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 # Auto-detect project paths: this file is at
@@ -458,6 +459,9 @@ def run_one_cell(
     # Everything for the run lands under this single directory: driver
     # artifacts (images/, depths/, states.json, ...) and agent outputs
     # (recipe/audit/transcript) sit side by side.
+    if output_dir is None:
+        timestamp = datetime.now().strftime("%Y%m%d-%H:%M:%S")
+        output_dir = REPO_ROOT / "logs" / f"{timestamp}_{suite}_t{task}_s{seed}"
     output_dir = init_output_dir(output_dir)
 
     if cerebrum_type == "anthropic":

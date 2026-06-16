@@ -1,1 +1,0 @@
-"""LIBERO guide resources."""

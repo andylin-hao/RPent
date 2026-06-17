@@ -412,7 +412,7 @@ def _build_argparser() -> argparse.ArgumentParser:
                     help="Environment backend. Defaults to suite inference/libero.")
     ap.add_argument("--model", default=None,
                     help="Model id. Defaults to the selected backend's model env var.")
-    ap.add_argument("--max_turns", type=int, default=80)
+    ap.add_argument("--max_turns", type=int, default=100)
     ap.add_argument("--max_tokens", type=int, default=4096)
     ap.add_argument("--max_episode_steps", type=int, default=600)
     ap.add_argument("--cuda_device", default=None,

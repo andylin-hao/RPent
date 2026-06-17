@@ -1,7 +1,7 @@
 """Claude Agent SDK cerebrum.
 
 A thin, SDK-first backend for PhysicalAgent. ``solve()`` does four things:
-prepare run artifacts, bind the in-process tool runtime, drive the SDK
+prepare output files, bind the in-process tool runtime, drive the SDK
 query, and assemble a ``CerebrumResult``. Event rendering and stats
 collection live in a single observation layer (``_Recorder``) that has
 no backend state of its own.
@@ -13,11 +13,13 @@ import asyncio
 import base64
 import dataclasses
 import json
-import os
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
+
+import claude_agent_sdk
 
 from physical_agent.cerebrum.base import CerebrumResult
 from physical_agent.envs.registry import get_env_spec
@@ -25,24 +27,6 @@ from physical_agent.utils.config import get_repo_root
 from physical_agent.utils.logging import get_logger
 
 logger = get_logger("claude")
-
-
-# ---------------------------------------------------------------------------
-# Execution policy
-# ---------------------------------------------------------------------------
-
-# This backend deliberately ignores user/project ``.claude`` configuration:
-# the agent loop is fully described by the PhysicalAgent prompt + tool bridge.
-# Flip this to ``None`` (SDK default) if we ever want to honour CLAUDE.md.
-_SETTING_SOURCES: list[str] = []
-
-# Tools we allow Claude's built-in agent to use in addition to PhysicalAgent
-# MCP tools. ``mcp__physical_agent__*`` is added automatically when the bridge
-# is enabled.
-_DEFAULT_BUILTIN_TOOLS = "Bash Read Write Glob Grep"
-
-_FINISH_TOOL_NAME = "mcp__physical_agent__finish"
-
 
 # ---------------------------------------------------------------------------
 # Public backend
@@ -58,12 +42,11 @@ class ClaudeCodeCerebrum:
         output_dir: str,
         repo_root: str | Path | None = None,
         model: str = "sonnet",
-        allowed_tools: str = _DEFAULT_BUILTIN_TOOLS,
+        allowed_tools: str = "Bash Read Write Glob Grep",
         timeout_s: int = 600,
         max_budget_usd: float = 10.0,
         extra_dirs: list[str] | None = None,
         output_path: str | Path | None = None,
-        enable_mcp: bool = True,
         transport_host: str = "127.0.0.1",
         transport_port: int = 0,
         vla_endpoint: str = "",
@@ -80,7 +63,6 @@ class ClaudeCodeCerebrum:
         self._max_budget_usd = max_budget_usd
         self._extra_dirs = extra_dirs or []
         self._output_path = Path(output_path) if output_path else None
-        self._enable_mcp = enable_mcp
         self._transport_host = transport_host
         self._transport_port = int(transport_port)
         self._vla_endpoint = vla_endpoint
@@ -125,43 +107,70 @@ class ClaudeCodeCerebrum:
         *,
         max_turns: int,
     ) -> CerebrumResult:
-        sdk = _import_sdk()
-        artifacts = _Artifacts.create(self._output_path)
+        sdk = claude_agent_sdk
+        if self._output_path is None:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".out", prefix="claude_agent_task_", delete=False
+            ) as f:
+                output_path = Path(f.name)
+        else:
+            output_path = self._output_path
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_stream_path = output_path.with_suffix(output_path.suffix + ".stream.jsonl")
         recorder = _Recorder(max_turns=max_turns)
 
-        if self._enable_mcp:
-            self._bind_runtime()
+        self._bind_runtime()
         options = self._build_options(sdk, max_turns=max_turns)
 
         logger.info("prompt: %d chars", len(prompt))
         logger.info("output_dir: %s", self._output_dir)
         logger.info(
             "invoking Claude Agent SDK model %s (timeout=%ds, budget=$%s)",
-            self._model, self._timeout_s, self._max_budget_usd,
+            self._model,
+            self._timeout_s,
+            self._max_budget_usd,
         )
 
         started = time.time()
         error: str | None = None
-        with artifacts.open() as sink:
+        rendered_chunks: list[str] = []
+        with open(output_path, "w") as out_f, open(raw_stream_path, "w") as raw_f:
             try:
-                await asyncio.wait_for(
-                    _drive_sdk(sdk, prompt, options, recorder, sink),
-                    timeout=self._timeout_s,
-                )
+
+                async def consume_stream() -> None:
+                    async for message in sdk.query(prompt=prompt, options=options):
+                        _write_jsonl(raw_f, _message_to_json(message))
+                        if rendered := recorder.observe(message):
+                            rendered_chunks.append(rendered)
+                            out_f.write(rendered)
+                            out_f.flush()
+                            logger.info(rendered.rstrip())
+
+                await asyncio.wait_for(consume_stream(), timeout=self._timeout_s)
             except asyncio.TimeoutError:
                 error = f"Claude Agent SDK timed out after {self._timeout_s}s"
-                sink.event("timeout", error)
+                rendered = f"\n[cc-cerebrum] {error}\n"
+                rendered_chunks.append(rendered)
+                out_f.write(rendered)
+                out_f.flush()
+                _write_jsonl(raw_f, {"type": "timeout", "message": error})
+                logger.info(rendered.rstrip())
             except Exception as e:
                 error = f"{type(e).__name__}: {e}"
-                sink.event("error", error)
+                rendered = f"\n[cc-cerebrum] {error}\n"
+                rendered_chunks.append(rendered)
+                out_f.write(rendered)
+                out_f.flush()
+                _write_jsonl(raw_f, {"type": "error", "message": error})
+                logger.info(rendered.rstrip())
 
         elapsed = time.time() - started
-        text = sink.text() or artifacts.output_path.read_text(errors="replace")
+        text = "".join(rendered_chunks) or output_path.read_text(errors="replace")
         error = error or recorder.error
 
         logger.info("Claude Agent SDK finished in %.1fs", elapsed)
-        logger.info("output: %s", artifacts.output_path)
-        logger.info("raw stream: %s", artifacts.raw_path)
+        logger.info("output: %s", output_path)
+        logger.info("raw stream: %s", raw_stream_path)
 
         return CerebrumResult(
             finish_result=recorder.finish_result,
@@ -170,8 +179,8 @@ class ClaudeCodeCerebrum:
                 "backend": "claude_agent_sdk",
                 "elapsed_s": round(elapsed, 1),
                 "output_chars": len(text),
-                "output_path": str(artifacts.output_path),
-                "raw_stream_path": str(artifacts.raw_path),
+                "output_path": str(output_path),
+                "raw_stream_path": str(raw_stream_path),
                 **recorder.stats(),
             },
             error=error,
@@ -180,16 +189,11 @@ class ClaudeCodeCerebrum:
     # -- options + tool bridge ---------------------------------------------
 
     def _build_options(self, sdk: Any, *, max_turns: int) -> Any:
-        allowed = _tool_words(self._allowed_tools)
+        allowed = [
+            part for part in self._allowed_tools.replace(",", " ").split() if part
+        ]
         builtins = [name for name in allowed if "__" not in name]
-        mcp_servers: dict[str, Any] = {}
-
-        if self._enable_mcp:
-            mcp_servers["physical_agent"] = _build_physical_agent_server(
-                sdk,
-                env_name=self._env_name,
-            )
-            allowed.extend(get_env_spec(self._env_name).allowed_mcp_tool_names)
+        allowed.extend(get_env_spec(self._env_name).allowed_mcp_tool_names)
 
         return sdk.ClaudeAgentOptions(
             cwd=self._repo_root,
@@ -197,10 +201,16 @@ class ClaudeCodeCerebrum:
             max_turns=max_turns,
             max_budget_usd=self._max_budget_usd,
             tools=builtins or None,
-            allowed_tools=_unique(allowed),
-            mcp_servers=mcp_servers,
+            allowed_tools=list(dict.fromkeys(allowed)),
+            mcp_servers={
+                "physical_agent": _build_physical_agent_server(
+                    sdk,
+                    env_name=self._env_name,
+                ),
+            },
             add_dirs=[self._output_dir, *self._extra_dirs],
-            setting_sources=_SETTING_SOURCES,
+            # Ignore user/project .claude configuration; PhysicalAgent owns the loop.
+            setting_sources=[],
             stderr=lambda line: logger.debug("[claude-sdk] %s", line.rstrip()),
         )
 
@@ -229,83 +239,6 @@ class ClaudeCodeCerebrum:
 
 
 # ---------------------------------------------------------------------------
-# Run artifacts (output + raw event sinks)
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _Artifacts:
-    output_path: Path
-    raw_path: Path
-
-    @classmethod
-    def create(cls, output_path: Path | None) -> "_Artifacts":
-        path = output_path or _tmp_output_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return cls(output_path=path, raw_path=path.with_suffix(path.suffix + ".stream.jsonl"))
-
-    def open(self) -> "_Sink":
-        return _Sink(self.output_path, self.raw_path)
-
-
-class _Sink:
-    """Context manager that owns the two output files plus an in-memory buffer."""
-
-    def __init__(self, output_path: Path, raw_path: Path):
-        self._output_path = output_path
-        self._raw_path = raw_path
-        self._chunks: list[str] = []
-        self._out = None
-        self._raw = None
-
-    def __enter__(self) -> "_Sink":
-        self._out = open(self._output_path, "w")
-        self._raw = open(self._raw_path, "w")
-        return self
-
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-        del exc_type, exc, tb
-        for handle in (self._out, self._raw):
-            if handle is not None:
-                handle.close()
-
-    def raw(self, payload: dict[str, Any]) -> None:
-        _write_jsonl(self._raw, payload)
-
-    def text(self, chunk: str | None = None) -> str:
-        if chunk:
-            self._chunks.append(chunk)
-            self._out.write(chunk)
-            self._out.flush()
-            logger.info(chunk.rstrip())
-        return "".join(self._chunks)
-
-    def event(self, event_type: str, message: str) -> None:
-        """Record a backend-side lifecycle event (timeout/error)."""
-        rendered = f"\n[cc-cerebrum] {message}\n"
-        self.text(rendered)
-        self.raw({"type": event_type, "message": message})
-
-
-# ---------------------------------------------------------------------------
-# SDK driver
-# ---------------------------------------------------------------------------
-
-
-async def _drive_sdk(
-    sdk: Any,
-    prompt: str,
-    options: Any,
-    recorder: "_Recorder",
-    sink: _Sink,
-) -> None:
-    async for message in sdk.query(prompt=prompt, options=options):
-        sink.raw(_message_to_json(message))
-        if rendered := recorder.observe(message):
-            sink.text(rendered)
-
-
-# ---------------------------------------------------------------------------
 # Observation layer
 # ---------------------------------------------------------------------------
 
@@ -315,7 +248,7 @@ class _Recorder:
     """Pure adapter: consume SDK messages, emit text + accumulate stats.
 
     Holds no backend state. Errors that the SDK itself reports become
-    ``recorder.error``; transport-level errors are recorded by ``_Sink``.
+    ``recorder.error``; transport-level errors are written beside the transcript.
     """
 
     max_turns: int
@@ -323,12 +256,14 @@ class _Recorder:
     tool_calls: int = 0
     tool_names: dict[str, str] = field(default_factory=dict)
     pending_finish: dict[str, dict[str, Any]] = field(default_factory=dict)
-    usage: dict[str, int] = field(default_factory=lambda: {
-        "total_input_tokens": 0,
-        "total_output_tokens": 0,
-        "total_cache_creation_input_tokens": 0,
-        "total_cache_read_input_tokens": 0,
-    })
+    usage: dict[str, int] = field(
+        default_factory=lambda: {
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_cache_creation_input_tokens": 0,
+            "total_cache_read_input_tokens": 0,
+        }
+    )
     total_cost_usd: float | None = None
     finish_result: dict[str, Any] | None = None
     error: str | None = None
@@ -383,7 +318,9 @@ class _Recorder:
                 name = str(_get(block, "name", "tool"))
                 self.tool_names[tool_id] = name
                 tool_input = _get(block, "input", {}) or {}
-                if name == _FINISH_TOOL_NAME and isinstance(tool_input, dict):
+                if name in {"finish", "mcp__physical_agent__finish"} and isinstance(
+                    tool_input, dict
+                ):
                     self.pending_finish[tool_id] = dict(tool_input)
                 lines.append(f"[tool->] {name}: {_short_json(tool_input, limit=500)}\n")
             elif block_kind == "ToolResultBlock":
@@ -495,28 +432,25 @@ def _build_physical_agent_server(sdk: Any, *, env_name: str) -> Any:
     from physical_agent.tools import create_tool_registry
 
     registry = create_tool_registry(env_name)
-    sdk_tools = [
-        _make_sdk_tool(spec, sdk.tool, registry.execute_tool)
-        for spec in registry.get_tools_spec()
-    ]
-    return sdk.create_sdk_mcp_server(name="physical_agent", version="0.1.0", tools=sdk_tools)
+    sdk_tools = []
+    for spec in registry.get_tools_spec():
+        name = str(spec["name"])
+        description = str(spec.get("description", ""))
+        input_schema = spec.get("input_schema", {"type": "object"})
 
+        async def run_tool(
+            args: dict[str, Any],
+            *,
+            tool_name: str = name,
+        ) -> dict[str, Any]:
+            return _tool_result_to_mcp(registry.execute_tool(tool_name, args or {}))
 
-def _make_sdk_tool(
-    spec: dict[str, Any],
-    tool_decorator: Callable[..., Callable[[Callable[..., Any]], Any]],
-    execute_tool: Callable[[str, dict[str, Any]], dict[str, Any]],
-) -> Any:
-    name = str(spec["name"])
-    description = str(spec.get("description", ""))
-    input_schema = spec.get("input_schema", {"type": "object"})
+        run_tool.__name__ = f"physical_agent_{name}"
+        sdk_tools.append(sdk.tool(name, description, input_schema)(run_tool))
 
-    async def run_tool(args: dict[str, Any]) -> dict[str, Any]:
-        result = execute_tool(name, args or {})
-        return _tool_result_to_mcp(result)
-
-    run_tool.__name__ = f"physical_agent_{name}"
-    return tool_decorator(name, description, input_schema)(run_tool)
+    return sdk.create_sdk_mcp_server(
+        name="physical_agent", version="0.1.0", tools=sdk_tools
+    )
 
 
 def _tool_result_to_mcp(result: Any) -> dict[str, Any]:
@@ -524,13 +458,22 @@ def _tool_result_to_mcp(result: Any) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": str(result)}]}
 
     result_for_text = dict(result)
-    image = result_for_text.pop("_image_bytes", None)
-    image_cam = result_for_text.pop("_image_cam_bytes", None)
+    images = [
+        result_for_text.pop("_image_bytes", None),
+        result_for_text.pop("_image_cam_bytes", None),
+    ]
     content: list[dict[str, Any]] = [
         {"type": "text", "text": json.dumps(result_for_text, indent=2, default=str)},
     ]
-    _append_png(content, image)
-    _append_png(content, image_cam)
+    for data in images:
+        if data:
+            content.append(
+                {
+                    "type": "image",
+                    "data": base64.b64encode(data).decode("ascii"),
+                    "mimeType": "image/png",
+                }
+            )
 
     response: dict[str, Any] = {"content": content}
     if result_for_text.get("error"):
@@ -538,44 +481,9 @@ def _tool_result_to_mcp(result: Any) -> dict[str, Any]:
     return response
 
 
-def _append_png(content: list[dict[str, Any]], data: Any) -> None:
-    if not data:
-        return
-    content.append(
-        {
-            "type": "image",
-            "data": base64.b64encode(data).decode("ascii"),
-            "mimeType": "image/png",
-        }
-    )
-
-
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
-
-
-def _import_sdk() -> Any:
-    try:
-        import claude_agent_sdk
-    except ImportError as e:
-        raise RuntimeError(
-            "claude-agent-sdk is required for the claude_code backend. "
-            "Install project dependencies or run `pip install claude-agent-sdk`."
-        ) from e
-    return claude_agent_sdk
-
-
-def _tmp_output_path() -> Path:
-    return Path(f"/tmp/claude_agent_task_{os.getpid()}_{int(time.time() * 1000)}.out")
-
-
-def _tool_words(value: str) -> list[str]:
-    return [part for part in value.replace(",", " ").split() if part]
-
-
-def _unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
 
 
 def _kind(value: Any) -> str:

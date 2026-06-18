@@ -589,8 +589,7 @@ def main() -> int:
         stats = result.stats
         agent_error = result.error
     except Exception as e:
-        agent_error = f"{type(e).__name__}: {e}"
-        logger.error("EXCEPTION in agent loop: %s", agent_error)
+        logger.error("EXCEPTION in agent loop: %s", e)
     finally:
         if proc is not None:
             stop_env_server(

@@ -172,7 +172,7 @@ class OpenAICompatibleAdapter:
             extra_kwargs["reasoning_effort"] = self._reasoning_effort
         for outer in range(3):
             try:
-                return self._client.chat.completions.create(
+                response = self._client.chat.completions.create(
                     model=self._model,
                     messages=messages,
                     tools=tools,
@@ -180,13 +180,14 @@ class OpenAICompatibleAdapter:
                     max_tokens=self._max_tokens,
                     **extra_kwargs,
                 )
+                # Some OpenAI-compatible gateways answer 200 with an empty
+                # body (no `choices`) when the upstream request fails. Treat that as
+                # a transient, retryable error instead of crashing the agent loop.
+                _first_choice(response)
+                return response
             except Exception as e:  # noqa: BLE001 - SDK-compatible errors vary by provider.
                 last_err = e
                 if not _is_retryable_error(e):
-                    logger.error(
-                        "non-retryable API error '%s: %s'",
-                        type(e).__name__, e,
-                    )
                     raise
                 wait = 10 * (outer + 1)
                 logger.warning(
@@ -194,6 +195,7 @@ class OpenAICompatibleAdapter:
                     type(e).__name__, e, wait, outer + 1,
                 )
                 time.sleep(wait)
+
         logger.error("giving up after 3 retries; last error: %s", last_err)
         return None
 
@@ -325,7 +327,7 @@ def _parse_tool_arguments(raw_arguments: Any) -> tuple[dict[str, Any], str | Non
 def _first_choice(response: Any) -> Any:
     choices = _get(response, "choices") or []
     if not choices:
-        raise RuntimeError("OpenAI-compatible response did not include choices")
+        raise KeyError("OpenAI-compatible response did not include choices")
     return choices[0]
 
 
@@ -338,6 +340,7 @@ def _is_retryable_error(error: Exception) -> bool:
         "RateLimitError",
         "Timeout",
         "TimeoutException",
+        "KeyError",
     }:
         return True
     status_code = getattr(error, "status_code", None)

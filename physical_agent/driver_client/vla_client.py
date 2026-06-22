@@ -1,6 +1,5 @@
 """HTTP client for the Pi0.5 VLA `/predict` server.
 
-Used by ``LiberoPrimitiveDriver`` in place of an in-process openpi model.
 The server lifecycle is the caller's responsibility: bring up
 ``deployment/rlinf/vla_server.py`` (or any compatible ``/predict``
 implementation) before constructing this client.
@@ -58,7 +57,7 @@ def _to_numpy(x: Any) -> np.ndarray:
 class VLAClient:
     """HTTP client wrapping a remote Pi0.5 VLA `/predict` server.
 
-    Only call site is ``LiberoPrimitiveDriver``, which uses one method:
+    Only call site is ``LiberoPrimitives``, which uses one method:
     ``predict_action_batch(env_obs, mode="eval")``.
     """
 
@@ -114,7 +113,7 @@ class VLAClient:
             raise ValueError(
                 f"main_images expected shape [B,H,W,3]; got {main_images.shape}"
             )
-        # LiberoPrimitiveDriver always runs with B=1 (num_envs=1). Encode the
+        # LiberoPrimitives always runs with B=1 (num_envs=1). Encode the
         # first batch element. If batch>1 ever surfaces, callers should fan
         # out one request per item.
         images: dict[str, Any] = {

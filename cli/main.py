@@ -9,7 +9,6 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -20,19 +19,13 @@ from physical_agent.utils.config import (
 )
 
 from physical_agent.cerebrum.base import build_cerebrum  # noqa: E402
-from physical_agent.envs.registry import (  # noqa: E402
-    infer_env_from_suite,
-)
+from physical_agent.envs import get_env_spec, get_toolkit  # noqa: E402
 from physical_agent.driver_client import (  # noqa: E402
     create_driver_client,
     get_socket_endpoint,
     set_socket_endpoint,
 )
 from physical_agent.driver_client.vla_client import VLAClient  # noqa: E402
-from physical_agent.tools import (  # noqa: E402
-    create_tool_registry,
-    tool_result_to_content_blocks,
-)
 from physical_agent.utils.logging import get_logger, init_output_dir  # noqa: E402
 
 logger = get_logger("agent")
@@ -150,17 +143,10 @@ def start_env_server(
 def stop_env_server(
     proc: subprocess.Popen,
     output_dir: str,
-    stop_recording_and_save: Callable[[], None] | None = None,
     timeout: float = 15.0,
 ) -> None:
     if proc.poll() is not None:
         return
-    # Agent-side: flush the episode video before the env+model process dies.
-    if stop_recording_and_save is not None:
-        try:
-            stop_recording_and_save()
-        except Exception:
-            pass
     try:
         client = create_driver_client(output_dir)
         client.call("shutdown", timeout_s=timeout)
@@ -279,8 +265,8 @@ def _build_argparser() -> argparse.ArgumentParser:
                     help="e.g. libero_object_task, libero_spatial_swap")
     ap.add_argument("--task", type=int, required=True)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--env", dest="env_name", default=None,
-                    help="Environment backend. Defaults to suite inference/libero.")
+    ap.add_argument("--env", dest="env_name", default="libero",
+                    help="Environment backend. Defaults to libero.")
     ap.add_argument("--model", default=None,
                     help="Model id. Defaults to the selected backend's model env var.")
     ap.add_argument("--max_turns", type=int, default=100)
@@ -336,9 +322,9 @@ def main() -> int:
     suite = args.suite
     task = args.task
     seed = args.seed
-    env_name = args.env_name or infer_env_from_suite(suite)
-    tool_registry = create_tool_registry(env_name)
-    env_spec = tool_registry.env_spec
+    env_name = args.env_name
+    toolkit = get_toolkit(env_name)
+    env_spec = get_env_spec(env_name)
     prompt_bundle = env_spec.prompts
 
     max_episode_steps = args.max_episode_steps
@@ -422,7 +408,7 @@ def main() -> int:
             cerebrum.set_socket_endpoint(*endpoint)
             cerebrum.set_vla_endpoint(vla_endpoint)
         else:
-            env_spec.set_driver_client(
+            toolkit.set_driver_client(
                 create_driver_client(output_dir),
                 model=VLAClient(vla_endpoint),
                 hide_object_coords=args.perception,
@@ -442,7 +428,7 @@ def main() -> int:
             cerebrum.set_socket_endpoint(args.transport_host, args.transport_port)
             cerebrum.set_vla_endpoint(vla_endpoint)
         else:
-            env_spec.set_driver_client(
+            toolkit.set_driver_client(
                 create_driver_client(output_dir),
                 model=VLAClient(vla_endpoint),
                 hide_object_coords=args.perception,
@@ -456,9 +442,7 @@ def main() -> int:
         result = cerebrum.solve(
             system_prompt=system_prompt,
             user_message=user_msg,
-            tools_spec=tool_registry.get_tools_spec(),
-            tool_handler=tool_registry.execute_tool,
-            tool_result_formatter=tool_result_to_content_blocks,
+            toolkit=toolkit,
             max_turns=args.max_turns,
         )
         finish_result = result.finish_result
@@ -469,11 +453,10 @@ def main() -> int:
         logger.error("EXCEPTION in agent loop: %s", e)
     finally:
         if proc is not None:
-            stop_env_server(
-                proc,
-                output_dir=output_dir,
-                stop_recording_and_save=env_spec.stop_recording_and_save,
-            )
+            # Agent-side: flush the episode video before the env+model
+            # process dies, then shut down the env server.
+            toolkit.release_driver_client()
+            stop_env_server(proc, output_dir=output_dir)
         stop_vla_server(vla_proc)
 
     elapsed = time.time() - t0

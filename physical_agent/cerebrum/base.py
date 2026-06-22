@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from physical_agent.utils.config import (
     get_anthropic_api_key,
@@ -15,6 +15,7 @@ from physical_agent.utils.config import (
     get_openai_compat_model,
     get_repo_root,
 )
+from physical_agent.tools.toolkit import Toolkit
 
 
 class CerebrumResult:
@@ -50,9 +51,7 @@ class Cerebrum(Protocol):
         *,
         system_prompt: str,
         user_message: str,
-        tools_spec: list[dict[str, Any]],
-        tool_handler: Callable[[str, dict[str, Any]], dict[str, Any]],
-        tool_result_formatter: Callable[[dict[str, Any]], list[dict[str, Any]]],
+        toolkit: Toolkit,
         max_turns: int,
     ) -> CerebrumResult:
         """Run the multi-turn agent loop until completion or budget.
@@ -60,9 +59,12 @@ class Cerebrum(Protocol):
         Args:
             system_prompt: System-level instructions (role, rules, workflow).
             user_message: Initial user message (task description, first steps).
-            tools_spec: Anthropic-style tool definitions list.
-            tool_handler: ``(name, input_dict) -> result_dict``.
-            tool_result_formatter: ``result_dict -> list[content_block]``.
+            toolkit: The full :class:`~physical_agent.tools.toolkit.Toolkit`
+                (common + env tools). Backends derive ``tools_spec`` via
+                ``toolkit.get_tools_spec()`` and dispatch calls via
+                ``toolkit.execute_tool()``; MCP-based backends also use
+                ``toolkit.allowed_mcp_tool_names`` and the driver lifecycle
+                hooks.
             max_turns: Maximum LLM turns before giving up.
 
         Returns:
@@ -165,7 +167,6 @@ def build_cerebrum(
             output_path=Path(output_dir) / f"claude_{recipe_tag}.txt",
             transport_host=transport_host,
             transport_port=transport_port,
-            env_name=env_name,
             hide_object_coords=perception,
             video_path=str(Path(output_dir) / "episode.mp4"),
         )

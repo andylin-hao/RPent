@@ -1,11 +1,15 @@
 """Environment-specific PhysicalAgent extensions."""
 
-from physical_agent.envs.base import EnvSpec, PromptBundle
-from physical_agent.envs.registry import get_env_spec, infer_env_from_suite
+from physical_agent.envs.base import (
+    EnvSpec,
+    PromptBundle,
+    get_env_spec,
+    get_toolkit,
+)
 
 __all__ = [
     "EnvSpec",
     "PromptBundle",
     "get_env_spec",
-    "infer_env_from_suite",
+    "get_toolkit",
 ]

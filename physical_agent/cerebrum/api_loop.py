@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from typing import Any
 
-from physical_agent.cerebrum.adapters.base import ApiAdapter, ToolResult
+from physical_agent.cerebrum.adapters.base import ApiAdapter
 from physical_agent.cerebrum.base import CerebrumResult
+from physical_agent.tools.toolkit import Toolkit, ToolResult
 from physical_agent.utils.logging import get_logger
 
 logger = get_logger("api_loop")
@@ -22,16 +23,14 @@ class ApiAgentLoop:
         *,
         system_prompt: str,
         user_message: str,
-        tools_spec: list[dict[str, Any]],
-        tool_handler: Callable[[str, dict[str, Any]], dict[str, Any]],
-        tool_result_formatter: Callable[[dict[str, Any]], list[dict[str, Any]]],
+        toolkit: Toolkit,
         max_turns: int,
     ) -> CerebrumResult:
         """Run the shared tool-calling loop until finish, stop, or budget."""
         state = self._adapter.start(
             system_prompt=system_prompt,
             user_message=user_message,
-            tools_spec=tools_spec,
+            tools_spec=toolkit.get_tools_spec(),
         )
 
         finish_result = None
@@ -57,28 +56,25 @@ class ApiAgentLoop:
                 for tool_call in model_turn.tool_calls:
                     n_tool_calls += 1
                     if tool_call.parse_error is not None:
-                        result = {
-                            "error": tool_call.parse_error,
-                            "raw_arguments": tool_call.raw_arguments,
-                        }
+                        tr = ToolResult(
+                            name=tool_call.name,
+                            result={
+                                "error": tool_call.parse_error,
+                                "raw_arguments": tool_call.raw_arguments,
+                            },
+                        )
                     else:
-                        result = tool_handler(tool_call.name, tool_call.arguments)
+                        tr = toolkit.execute_tool(tool_call.name, tool_call.arguments)
 
-                    if isinstance(result, dict) and result.get("_finish"):
-                        finish_result = result
+                    tr.call_id = tool_call.id
 
-                    _log_tool_result(tool_call.name, result)
-                    tool_results.append(ToolResult(
-                        call_id=tool_call.id,
-                        name=tool_call.name,
-                        result=result,
-                    ))
+                    if tr.is_finish:
+                        finish_result = tr.result
 
-                self._adapter.append_tool_results(
-                    state,
-                    tool_results,
-                    tool_result_formatter,
-                )
+                    _log_tool_result(tr.name, tr.result)
+                    tool_results.append(tr)
+
+                self._adapter.append_tool_results(state, tool_results)
                 if finish_result is not None:
                     logger.info("FINISH called: %s", finish_result)
                     break

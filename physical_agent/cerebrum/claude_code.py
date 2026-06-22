@@ -10,19 +10,18 @@ no backend state of its own.
 from __future__ import annotations
 
 import asyncio
-import base64
 import dataclasses
 import json
 import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import claude_agent_sdk
 
 from physical_agent.cerebrum.base import CerebrumResult
-from physical_agent.envs.registry import get_env_spec
+from physical_agent.tools.toolkit import Toolkit
 from physical_agent.utils.config import get_repo_root
 from physical_agent.utils.logging import get_logger
 
@@ -50,7 +49,6 @@ class ClaudeCodeCerebrum:
         transport_host: str = "127.0.0.1",
         transport_port: int = 0,
         vla_endpoint: str = "",
-        env_name: str = "libero",
         hide_object_coords: bool = False,
         video_path: str = "",
     ):
@@ -66,7 +64,6 @@ class ClaudeCodeCerebrum:
         self._transport_host = transport_host
         self._transport_port = int(transport_port)
         self._vla_endpoint = vla_endpoint
-        self._env_name = env_name
         self._hide_object_coords = bool(hide_object_coords)
         self._video_path = video_path
 
@@ -84,17 +81,15 @@ class ClaudeCodeCerebrum:
         *,
         system_prompt: str,
         user_message: str,
-        tools_spec: list[dict[str, Any]] | None = None,
-        tool_handler: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
-        tool_result_formatter: Callable[[dict[str, Any]], list[dict[str, Any]]] | None = None,
+        toolkit: Toolkit,
         max_turns: int,
     ) -> CerebrumResult:
         """Run one Claude Agent SDK session for the given prompt."""
-        del tools_spec, tool_handler, tool_result_formatter
         prompt = f"{system_prompt}\n\n{user_message}" if system_prompt else user_message
         return asyncio.run(
             self._solve_async(
                 prompt,
+                toolkit=toolkit,
                 max_turns=max_turns,
             )
         )
@@ -105,6 +100,7 @@ class ClaudeCodeCerebrum:
         self,
         prompt: str,
         *,
+        toolkit: Toolkit,
         max_turns: int,
     ) -> CerebrumResult:
         sdk = claude_agent_sdk
@@ -119,8 +115,8 @@ class ClaudeCodeCerebrum:
         raw_stream_path = output_path.with_suffix(output_path.suffix + ".stream.jsonl")
         recorder = _Recorder(max_turns=max_turns)
 
-        self._bind_runtime()
-        options = self._build_options(sdk, max_turns=max_turns)
+        self._bind_runtime(toolkit)
+        options = self._build_options(sdk, toolkit=toolkit, max_turns=max_turns)
 
         logger.info("prompt: %d chars", len(prompt))
         logger.info("output_dir: %s", self._output_dir)
@@ -188,12 +184,12 @@ class ClaudeCodeCerebrum:
 
     # -- options + tool bridge ---------------------------------------------
 
-    def _build_options(self, sdk: Any, *, max_turns: int) -> Any:
+    def _build_options(self, sdk: Any, *, toolkit: Toolkit, max_turns: int) -> Any:
         allowed = [
             part for part in self._allowed_tools.replace(",", " ").split() if part
         ]
         builtins = [name for name in allowed if "__" not in name]
-        allowed.extend(get_env_spec(self._env_name).allowed_mcp_tool_names)
+        allowed.extend(toolkit.allowed_mcp_tool_names)
 
         return sdk.ClaudeAgentOptions(
             cwd=self._repo_root,
@@ -205,7 +201,7 @@ class ClaudeCodeCerebrum:
             mcp_servers={
                 "physical_agent": _build_physical_agent_server(
                     sdk,
-                    env_name=self._env_name,
+                    toolkit=toolkit,
                 ),
             },
             add_dirs=[self._output_dir, *self._extra_dirs],
@@ -214,7 +210,7 @@ class ClaudeCodeCerebrum:
             stderr=lambda line: logger.debug("[claude-sdk] %s", line.rstrip()),
         )
 
-    def _bind_runtime(self) -> None:
+    def _bind_runtime(self, toolkit: Toolkit) -> None:
         """Bind PhysicalAgent driver/output state for this run.
 
         Single source of side effects in this backend. Always called explicitly
@@ -230,7 +226,7 @@ class ClaudeCodeCerebrum:
         from physical_agent.utils.logging import init_output_dir
 
         init_output_dir(self._output_dir)
-        get_env_spec(self._env_name).set_driver_client(
+        toolkit.set_driver_client(
             SocketDriverClient(self._transport_host, self._transport_port),
             model=VLAClient(self._vla_endpoint),
             hide_object_coords=self._hide_object_coords,
@@ -428,12 +424,9 @@ class _Recorder:
 # ---------------------------------------------------------------------------
 
 
-def _build_physical_agent_server(sdk: Any, *, env_name: str) -> Any:
-    from physical_agent.tools import create_tool_registry
-
-    registry = create_tool_registry(env_name)
+def _build_physical_agent_server(sdk: Any, *, toolkit: Toolkit) -> Any:
     sdk_tools = []
-    for spec in registry.get_tools_spec():
+    for spec in toolkit.get_tools_spec():
         name = str(spec["name"])
         description = str(spec.get("description", ""))
         input_schema = spec.get("input_schema", {"type": "object"})
@@ -443,7 +436,7 @@ def _build_physical_agent_server(sdk: Any, *, env_name: str) -> Any:
             *,
             tool_name: str = name,
         ) -> dict[str, Any]:
-            return _tool_result_to_mcp(registry.execute_tool(tool_name, args or {}))
+            return _tool_result_to_mcp(toolkit.execute_tool(tool_name, args or {}))
 
         run_tool.__name__ = f"physical_agent_{name}"
         sdk_tools.append(sdk.tool(name, description, input_schema)(run_tool))
@@ -453,30 +446,31 @@ def _build_physical_agent_server(sdk: Any, *, env_name: str) -> Any:
     )
 
 
-def _tool_result_to_mcp(result: Any) -> dict[str, Any]:
-    if not isinstance(result, dict):
-        return {"content": [{"type": "text", "text": str(result)}]}
+def _tool_result_to_mcp(tr: Any) -> dict[str, Any]:
+    # The toolkit already formatted the result into Anthropic content blocks;
+    # translate those into the MCP content shape (text + image).
+    blocks = getattr(tr, "content_blocks", None)
+    if blocks is None:
+        return {"content": [{"type": "text", "text": str(tr)}]}
 
-    result_for_text = dict(result)
-    images = [
-        result_for_text.pop("_image_bytes", None),
-        result_for_text.pop("_image_cam_bytes", None),
-    ]
-    content: list[dict[str, Any]] = [
-        {"type": "text", "text": json.dumps(result_for_text, indent=2, default=str)},
-    ]
-    for data in images:
-        if data:
+    content: list[dict[str, Any]] = []
+    for block in blocks:
+        block_type = _get(block, "type")
+        if block_type == "text":
+            content.append({"type": "text", "text": _get(block, "text", "")})
+        elif block_type == "image":
+            src = _get(block, "source", {})
             content.append(
                 {
                     "type": "image",
-                    "data": base64.b64encode(data).decode("ascii"),
-                    "mimeType": "image/png",
+                    "data": _get(src, "data", ""),
+                    "mimeType": _get(src, "media_type", "image/png"),
                 }
             )
 
     response: dict[str, Any] = {"content": content}
-    if result_for_text.get("error"):
+    result_dict = getattr(tr, "result", None)
+    if isinstance(result_dict, dict) and result_dict.get("error"):
         response["is_error"] = True
     return response
 

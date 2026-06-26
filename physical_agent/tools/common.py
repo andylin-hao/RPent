@@ -44,7 +44,7 @@ TOOLS_SPEC: list[dict] = [
         "description": (
             "List files in a directory (non-recursive). Default = {output_dir}. "
             "Use to inspect the driver working directory or to discover existing "
-            "recipes in workspace_pro/results_*_pert/."
+            "recipes in resources/libero/results_*_pert/."
         ),
         "input_schema": {
             "type": "object",

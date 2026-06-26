@@ -68,9 +68,9 @@ API_WORKFLOW = """
 
 """ + LIBERO_GUIDES + """
 3. CHECK PAST RECIPES for similar cells. Examples already solved:
-   • workspace_pro/results_object_pert/   (libero_object × {task, swap, lan})
-   • workspace_pro/results_spatial_pert/  (libero_spatial)
-   • workspace_pro/results_10_pert/       (libero_10)
+   • resources/libero/results_object_pert/   (libero_object × {task, swap, lan})
+   • resources/libero/results_spatial_pert/  (libero_spatial)
+   • resources/libero/results_10_pert/       (libero_10)
    Pattern: recipe_<suite>_<pert>_t<N>_s0.jsonl is the working command
    sequence; <suite>_<pert>_t<N>_s0.json is the audit with diagnostics.
    IMPORTANT: recipes have HARD-CODED coordinates tuned for their own
@@ -223,13 +223,13 @@ Goal: make state.libero_terminated == True via a strict-regime hybrid run
 (Pi0 only for the pick via track_obj cut; LLM scripts every move + release).
 
 Suggested first steps:
-1. read_text_file("logs/memory/MEMORY.md")
+1. read_text_file("resources/libero/memory/MEMORY.md")
    — the index of operating wisdom. Scan ALL lines, then read the
    ~3-5 individual feedback_*.md files (in the same dir) that look
    most relevant to your suite (e.g. for libero_spatial bowl tasks,
    definitely read feedback_bowl_eef_y_offset.md).
 2. Use the embedded guide sections already included in the system prompt.
-3. (optional) list_dir on the appropriate workspace_pro/results_*_pert/
+3. (optional) list_dir on the appropriate resources/libero/results_*_pert/
    then read a past recipe_<sim>.jsonl as a starting point — BUT
    re-derive coords from states.json[0] and apply memory offsets, don't
    blindly copy.

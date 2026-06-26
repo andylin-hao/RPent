@@ -1207,7 +1207,7 @@ Cross-suite progress + non-obvious past failures:
 ## TL;DR launch checklist
 
 ```
-0. cat logs/memory/MEMORY.md
+0. cat resources/libero/memory/MEMORY.md
    -> scan one-line hooks; Read matching .md files for relevant fixes.
 1. cd ${PHYSICALAGENT_REPO_ROOT:-$(pwd)}
 2. Bash run_in_background:true

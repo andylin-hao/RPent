@@ -7,12 +7,12 @@ from physical_agent.envs.libero.prompts.shared import LIBERO_GUIDES
 
 CLI_PERCEPTION_WORKFLOW = """
 1. READ MEMORY FIRST (operating wisdom — magic numbers + gotchas):
-     `logs/memory/MEMORY.md`
+     `resources/libero/memory/MEMORY.md`
    Scan it, then `Read` the 3-5 most relevant feedback_*.md for your cell.
 
 """ + LIBERO_GUIDES + """
 3. USE PAST EXPERIENCE AS A STRATEGY PRIOR (not as coords):
-   - workspace_pro/results_object_pert/   and   primitives/results_all_object_new/
+   - resources/libero/results_object_pert/   and   primitives/results_all_object_new/
    - Pattern: recipe_<suite>_<pert>_t<N>_s0.jsonl + <...>.json audit.
    These recipes were built WITH oracle coords; their numbers are tuned for a
    DIFFERENT scene, so use them ONLY for STRATEGY (which object, prompt ladder,
@@ -101,7 +101,7 @@ at the top of your system prompt).
 Goal: make state.libero_terminated == True via a strict_perception hybrid run.
 
 Suggested first steps:
-1. read_text_file("logs/memory/MEMORY.md")
+1. read_text_file("resources/libero/memory/MEMORY.md")
 2. Use the embedded guide sections already included in the system prompt.
 3. view_camera_meta() — get the calibration matrices
 4. view_driver_state(step=0) — see the initial scene (both images!)

@@ -8,10 +8,10 @@ from physical_agent.envs.libero.prompts.shared import LIBERO_GUIDES
 CLI_WORKFLOW = """
 1. READ MEMORY FIRST (the "operating wisdom" — magic numbers + gotchas).
    The snapshot lives IN THE REPO at:
-     `logs/memory/MEMORY.md`
+     `resources/libero/memory/MEMORY.md`
    (If you are running on the originating machine and want the LIVE
    feed instead, it's at
-   `logs/memory/MEMORY.md`,
+   `resources/libero/memory/MEMORY.md`,
    but the in-repo snapshot is the portable source of truth.)
    Scan all ~40 lines, then `Read` the 3-5 most relevant feedback_*.md
    for your cell. For bowl->plate spatial tasks ALWAYS read:
@@ -24,10 +24,10 @@ CLI_WORKFLOW = """
 
 """ + LIBERO_GUIDES + """
 3. CHECK PAST RECIPES for similar cells:
-   - workspace_pro/results_spatial_pert/   (libero_spatial)
-   - workspace_pro/results_object_pert/    (libero_object)
-   - workspace_pro/results_10_pert/        (libero_10)
-   - workspace_pro/results_goal_pert/      (libero_goal — corrected seed-0
+   - resources/libero/results_spatial_pert/   (libero_spatial)
+   - resources/libero/results_object_pert/    (libero_object)
+   - resources/libero/results_10_pert/        (libero_10)
+   - resources/libero/results_goal_pert/      (libero_goal — corrected seed-0
        PHYSICS-ONLY recipes; for goal cells READ the matching
        recipe_goal_<regime>_t<N>_s0.jsonl + audit first. base/lan/swap/task
        share the same task semantics, so a base/lan recipe is a valid template

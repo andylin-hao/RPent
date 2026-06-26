@@ -73,7 +73,7 @@ adds them and also overrides `Task.language` to read each BDDL's actual
 
 ```bash
 cd ${LIBERO_PRO_PATH:-/path/to/LIBERO-PRO}
-git apply <path-to>/workspace_pro/liberopro_register_perturbations.patch
+git apply <path-to>/resources/libero/liberopro_register_perturbations.patch
 ```
 
 If the patch is already applied (likely), `git status -s` shows clean. If
@@ -235,8 +235,8 @@ Then issue JSON commands per STRICT_HYBRID_GUIDE §"The command vocabulary".
 Save the audit at the end as:
 
 ```
-workspace_pro/results_<suite_base>_pert/<perturbation>_t<N>_s<M>.json
-workspace_pro/results_<suite_base>_pert/recipe_<perturbation>_t<N>_s<M>.jsonl
+resources/libero/results_<suite_base>_pert/<perturbation>_t<N>_s<M>.json
+resources/libero/results_<suite_base>_pert/recipe_<perturbation>_t<N>_s<M>.jsonl
 ```
 
 e.g. `results_spatial_pert/spatial_task_t0_s0.json`. The audit JSON schema
@@ -263,8 +263,8 @@ cd ${PHYSICALAGENT_REPO_ROOT:-$(pwd)}
 LIBERO_TYPE=pro CUDA_VISIBLE_DEVICES=0 python \
   physical_agent/primitives/pi0_baseline.py \
   --suite libero_spatial_task --task 0 --seed 0 --max_chunks 60 \
-  --out physical_agent/primitives/workspace_pro/results_spatial_pert/baseline_pi0_spatial_task_t0_s0.json \
-  --save_image_dir physical_agent/primitives/workspace_pro/results_spatial_pert/baseline_imgs/task
+  --out physical_agent/primitives/resources/libero/results_spatial_pert/baseline_pi0_spatial_task_t0_s0.json \
+  --save_image_dir physical_agent/primitives/resources/libero/results_spatial_pert/baseline_imgs/task
 ```
 
 Runtime: ~80s model load + 10–25s rollout. Reads the perturbed
@@ -328,7 +328,7 @@ only for t0**. That's the work that remains.
    task. Parameterize recipes as `commands_for(states_json_step0) -> List[dict]`
    reading object positions at runtime. Existing recipes already follow
    this data-flow pattern; codify them as Python callables in
-   `workspace_pro/strategies/<suite>/<task>.py`.
+   `resources/libero/strategies/<suite>/<task>.py`.
 3. **Replicate on `libero_object`, `libero_goal`, `libero_10`.** Each has
    `_swap`, `_task`, `_lan`, `_object` available. Frame split applies
    (LIVING_ROOM vs KITCHEN per task — read `states.json[0].state.robot0_eef_pos[2]`).
@@ -356,13 +356,13 @@ until [ -f $OUTPUT_DIR/states.json ] && [ -s $OUTPUT_DIR/states.json ]; do sleep
 
 # 4. Open states.json (step 0 entry) AND images/image_00.png; describe the scene; decide target
 # 5. Issue JSON commands per STRICT_HYBRID_GUIDE §"The command vocabulary"
-# 6. Save audit + recipe to workspace_pro/results_<base>_pert/
+# 6. Save audit + recipe to resources/libero/results_<base>_pert/
 
 # 7. Run Pi0 baseline for the same (suite, task, seed)
 LIBERO_TYPE=pro CUDA_VISIBLE_DEVICES=0 python \
   physical_agent/primitives/pi0_baseline.py \
   --suite libero_spatial_task --task <N> --seed 0 --max_chunks 60 \
-  --out physical_agent/primitives/workspace_pro/results_spatial_pert/baseline_pi0_spatial_task_t<N>_s0.json
+  --out physical_agent/primitives/resources/libero/results_spatial_pert/baseline_pi0_spatial_task_t<N>_s0.json
 ```
 
 When in doubt about a primitive or a rule, the source of truth is

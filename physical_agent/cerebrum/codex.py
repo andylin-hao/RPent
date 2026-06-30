@@ -21,7 +21,7 @@ from typing import Any
 
 import openai_codex
 
-from physical_agent.cerebrum.base import CerebrumResult
+from physical_agent.cerebrum.base import CerebrumResult, strip_mcp_prefix
 from physical_agent.tools.toolkit import Toolkit
 from physical_agent.utils.config import get_repo_root
 from physical_agent.utils.logging import get_logger
@@ -49,7 +49,6 @@ class CodexCerebrum:
         transport_port: int = 0,
         vla_endpoint: str = "",
         env_name: str = "libero",
-        hide_object_coords: bool = False,
         video_path: str = "",
     ):
         """Initialize the Codex SDK backend."""
@@ -63,7 +62,6 @@ class CodexCerebrum:
         self._transport_port = int(transport_port)
         self._vla_endpoint = vla_endpoint
         self._env_name = env_name
-        self._hide_object_coords = bool(hide_object_coords)
         self._video_path = video_path
 
     def set_socket_endpoint(self, host: str, port: int) -> None:
@@ -233,7 +231,6 @@ class CodexCerebrum:
                     transport_port=self._transport_port,
                     vla_endpoint=self._vla_endpoint,
                     env_name=self._env_name,
-                    hide_object_coords=self._hide_object_coords,
                     video_path=self._video_path,
                 )
             ),
@@ -317,7 +314,7 @@ class _Recorder:
 
         if item_type in {"mcpToolCall", "dynamicToolCall"}:
             self.tool_calls += 1
-            name = str(_get(item, "tool", item_type))
+            name = strip_mcp_prefix(str(_get(item, "tool", item_type)))
             payload = _summarise_item(item)
             self._maybe_capture_finish(name, item)
             return f"[tool<-] {name}: {json.dumps(payload, ensure_ascii=False)}\n"
@@ -370,7 +367,7 @@ class _Recorder:
     def _maybe_capture_finish(self, name: str, item: Any) -> None:
         if self.finish_result is not None:
             return
-        if name.lower() not in {"finish", "mcp__physical_agent__finish"}:
+        if name.lower() != "finish":
             return
         data = _jsonable(item)
         args = data.get("arguments") if isinstance(data, dict) else None
@@ -396,7 +393,6 @@ def _codex_mcp_config_overrides(
     transport_port: int,
     vla_endpoint: str,
     env_name: str,
-    hide_object_coords: bool,
     video_path: str,
 ) -> list[str]:
     if transport_port <= 0:
@@ -424,8 +420,6 @@ def _codex_mcp_config_overrides(
         "--env",
         env_name,
     ]
-    if hide_object_coords:
-        server_args.append("--hide-object-coords")
     if video_path:
         server_args += ["--video-path", video_path]
 

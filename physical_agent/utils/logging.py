@@ -52,9 +52,12 @@ class _StripPkgPrefixFilter(logging.Filter):
         return True
 
 
-def init_output_dir(log_dir: str | Path | None = None) -> Path:
+def init_output_dir(log_dir: str | Path | None = None, verbose: bool = False) -> Path:
     """Create *log_dir* (defaults to ``<repo>/logs/``), set up logging, and
     return the resolved path.
+
+    When *verbose* is True, both stdout and the ``run.log`` file log at DEBUG;
+    otherwise both log at INFO.
     """
     global _log_initialized, _output_dir
 
@@ -66,27 +69,29 @@ def init_output_dir(log_dir: str | Path | None = None) -> Path:
     if _log_initialized:
         return _output_dir
 
+    level = logging.DEBUG if verbose else logging.INFO
+
     pkg_logger = logging.getLogger(_PKG_LOGGER_NAME)
-    pkg_logger.setLevel(logging.DEBUG)
+    pkg_logger.setLevel(level)
     pkg_logger.propagate = False
     pkg_logger.handlers.clear()
 
     strip_filter = _StripPkgPrefixFilter()
 
-    # -- stdout handler (INFO and above) ----------------------------------
+    # -- stdout handler ---------------------------------------------------
     stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setLevel(logging.INFO)
+    stdout_handler.setLevel(level)
     stdout_handler.setFormatter(
         _ColourFormatter("[%(name)s] %(message)s")
     )
     stdout_handler.addFilter(strip_filter)
     pkg_logger.addHandler(stdout_handler)
 
-    # -- file handler (DEBUG and above, timestamped) ---------------------
+    # -- file handler (timestamped) --------------------------------------
     file_handler = logging.FileHandler(
         str(_output_dir / "run.log"), encoding="utf-8"
     )
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(level)
     file_handler.setFormatter(
         logging.Formatter(
             "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",

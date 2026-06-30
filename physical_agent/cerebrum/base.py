@@ -17,6 +17,22 @@ from physical_agent.utils.config import (
 )
 from physical_agent.tools.toolkit import Toolkit
 
+#: MCP namespace prefix for PhysicalAgent tools (``mcp__<server>__<tool>``).
+#: Toolkits expose plain tool names; cerebrums add/strip this prefix.
+MCP_TOOL_PREFIX = "mcp__physical_agent__"
+
+
+def add_mcp_prefix(name: str) -> str:
+    """Return the namespaced MCP tool name for a bare tool name."""
+    if name.startswith(MCP_TOOL_PREFIX):
+        return name
+    return f"{MCP_TOOL_PREFIX}{name}"
+
+
+def strip_mcp_prefix(name: str) -> str:
+    """Return the bare tool name, dropping the MCP namespace if present."""
+    return name.removeprefix(MCP_TOOL_PREFIX)
+
 
 class CerebrumResult:
     """Result returned by a cerebrum invocation."""
@@ -62,9 +78,7 @@ class Cerebrum(Protocol):
             toolkit: The full :class:`~physical_agent.tools.toolkit.Toolkit`
                 (common + env tools). Backends derive ``tools_spec`` via
                 ``toolkit.get_tools_spec()`` and dispatch calls via
-                ``toolkit.execute_tool()``; MCP-based backends also use
-                ``toolkit.allowed_mcp_tool_names`` and the driver lifecycle
-                hooks.
+                ``toolkit.execute_tool()``.
             max_turns: Maximum LLM turns before giving up.
 
         Returns:
@@ -88,9 +102,7 @@ def build_cerebrum(
     api_key: str | None = None,
     base_url: str | None = None,
     model: str | None = None,
-    max_tokens: int = 4096,
-    perception: bool = False,
-    thinking: bool = False,
+    max_tokens: int = 8192,
     claude_code_timeout_s: int | None = None,
     claude_code_max_budget_usd: float | None = None,
     codex_timeout_s: int | None = None,
@@ -125,7 +137,6 @@ def build_cerebrum(
                 client=client,
                 model=model or get_anthropic_model(),
                 max_tokens=max_tokens,
-                thinking=thinking,
             )
         )
     if cerebrum_type == "openai_compat":
@@ -149,14 +160,13 @@ def build_cerebrum(
                 client=client,
                 model=model or get_openai_compat_model(),
                 max_tokens=max_tokens,
-                thinking=thinking,
             )
         )
     if cerebrum_type == "claude_code":
         from physical_agent.cerebrum.claude_code import ClaudeCodeCerebrum
         cc_timeout_s = claude_code_timeout_s
         if cc_timeout_s is None:
-            cc_timeout_s = int(os.environ.get("CELL_TIMEOUT_S", "1200" if perception else "600"))
+            cc_timeout_s = int(os.environ.get("CELL_TIMEOUT_S", "1200"))
         cc_budget = claude_code_max_budget_usd
         if cc_budget is None:
             cc_budget = float(os.environ.get("MAX_BUDGET_USD", "10"))
@@ -168,7 +178,6 @@ def build_cerebrum(
             max_budget_usd=cc_budget,
             extra_dirs=[str(get_memory_dir())],
             output_path=Path(output_dir) / f"claude_{recipe_tag}.txt",
-            hide_object_coords=perception,
             video_path=str(Path(output_dir) / "episode.mp4"),
         )
     if cerebrum_type == "codex":
@@ -177,7 +186,7 @@ def build_cerebrum(
         if cx_timeout_s is None:
             cx_timeout_s = int(os.environ.get(
                 "CODEX_TIMEOUT_S",
-                os.environ.get("CELL_TIMEOUT_S", "1200" if perception else "600"),
+                os.environ.get("CELL_TIMEOUT_S", "1200"),
             ))
         return CodexCerebrum(
             output_dir=output_dir,
@@ -189,7 +198,6 @@ def build_cerebrum(
             transport_host=transport_host,
             transport_port=transport_port,
             env_name=env_name,
-            hide_object_coords=perception,
             video_path=str(Path(output_dir) / "episode.mp4"),
         )
     raise ValueError(f"unknown cerebrum_type: {cerebrum_type}")

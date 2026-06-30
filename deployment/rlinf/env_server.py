@@ -84,9 +84,8 @@ def build_env_cfg(
             "init_params": {
                 "camera_heights": 256,
                 "camera_widths": 256,
-                # Render depth too, so the perception-isolated protocol can
-                # back-project pixels to world from depth + camera calibration
-                # (no GT object poses).
+                # Render depth too, so we can back-project pixels to world
+                # from depth + camera calibration
                 "camera_depths": True,
                 "horizon": max_episode_steps,
                 **({"robots": [os.environ["LIBERO_ROBOT_BASE"]]}

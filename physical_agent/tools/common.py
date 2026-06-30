@@ -40,16 +40,16 @@ TOOLS_SPEC: list[dict] = [
         },
     },
     {
-        "name": "mcp_list_dir",
+        "name": "list_dir",
         "description": (
-            "List files in a directory (non-recursive). Default = {output_dir}. "
+            "List files in a directory (non-recursive). Default = {{output_dir}}. "
             "Use to inspect the driver working directory or to discover existing "
             "recipes in resources/libero/results_*_pert/."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Default: {output_dir}"},
+                "path": {"type": "string", "description": "Default: {{output_dir}}"},
             },
         },
     },
@@ -92,7 +92,7 @@ def write_text_file(path: str, content: str) -> dict:
     return {"path": str(p), "bytes_written": len(content.encode("utf-8"))}
 
 
-def mcp_list_dir(path: str = "") -> dict:
+def list_dir(path: str = "") -> dict:
     # Default to the current output dir (so parallel agents see their own).
     p = _resolve(path) if path else get_output_dir()
     if not p.exists():
@@ -104,5 +104,5 @@ def mcp_list_dir(path: str = "") -> dict:
 TOOL_HANDLERS: dict = {
     "read_text_file": read_text_file,
     "write_text_file": write_text_file,
-    "mcp_list_dir": mcp_list_dir,
+    "list_dir": list_dir,
 }

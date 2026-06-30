@@ -1,40 +1,64 @@
-"""Generic placeholder substitution for tool specs and prompts."""
+"""Single ``{{name}}`` placeholder substitution utility for prompts and tool specs."""
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from typing import Any
 
 from physical_agent.utils.logging import get_output_dir
 
-
-def default_replacements() -> dict[str, str]:
-    return {
-        "{output_dir}": str(get_output_dir())
-    }
+#: Matches ``{{name}}`` placeholders, tolerating surrounding whitespace.
+PLACEHOLDER = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 
 
-def bind_text(text: str, replacements: dict[str, str]) -> str:
-    for token, value in replacements.items():
-        if token and token in text:
-            text = text.replace(token, value)
-    return text
+def default_variables() -> dict[str, str]:
+    """Built-in variables available to every template (e.g. ``output_dir``)."""
+    return {"output_dir": str(get_output_dir())}
 
 
-def bind_placeholders(
+def substitute_text(
+    text: str,
+    variables: Mapping[str, Any],
+    *,
+    strict: bool = False,
+) -> str:
+    """Replace ``{{name}}`` placeholders in ``text`` using ``variables``.
+
+    Unknown placeholders are left untouched, unless ``strict`` is set — in
+    which case a ``KeyError`` is raised. Prompt rendering uses ``strict=True``
+    to catch authoring typos; tool-spec binding stays lenient because it only
+    supplies the built-in variables.
+    """
+    def _sub(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if name in variables:
+            return str(variables[name])
+        if strict:
+            raise KeyError(name)
+        return match.group(0)
+
+    return PLACEHOLDER.sub(_sub, text)
+
+
+def substitute(
     obj: Any,
-    replacements: dict[str, str] | None = None,
+    variables: Mapping[str, Any] | None = None,
+    *,
+    strict: bool = False,
 ) -> Any:
-    """Recursively substitute placeholders (e.g. {output_dir}) in all strings within ``obj``.
+    """Recursively substitute ``{{name}}`` placeholders within ``obj``.
 
     Walks dicts (keys preserved, string values substituted) and lists;
     non-string leaves are returned unchanged. New containers are returned so
-    the input is never mutated.
+    the input is never mutated. Defaults to :func:`default_variables` when
+    ``variables`` is omitted.
     """
-    if replacements is None:
-        replacements = default_replacements()
+    if variables is None:
+        variables = default_variables()
     if isinstance(obj, str):
-        return bind_text(obj, replacements)
+        return substitute_text(obj, variables, strict=strict)
     if isinstance(obj, list):
-        return [bind_placeholders(item, replacements) for item in obj]
+        return [substitute(item, variables, strict=strict) for item in obj]
     if isinstance(obj, dict):
-        return {key: bind_placeholders(value, replacements) for key, value in obj.items()}
+        return {key: substitute(value, variables, strict=strict) for key, value in obj.items()}
     return obj

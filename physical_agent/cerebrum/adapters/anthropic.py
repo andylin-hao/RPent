@@ -16,6 +16,11 @@ from physical_agent.cerebrum.adapters.base import (
 )
 
 
+#: Fraction of ``max_tokens`` reserved for Anthropic extended thinking.
+#: The remainder is left for visible text and tool-call output.
+THINKING_BUDGET_RATIO = 0.5
+
+
 class AnthropicAdapter(ApiAdapter):
     """Adapter for Anthropic Messages API tool-use."""
 
@@ -26,25 +31,18 @@ class AnthropicAdapter(ApiAdapter):
         self,
         client: anthropic.Anthropic,
         model: str,
-        max_tokens: int = 4096,
-        *,
-        thinking: bool = False,
-        thinking_budget_tokens: int = 4096,
+        max_tokens: int = 8192,
     ):
-        self._thinking_budget = int(thinking_budget_tokens)
         super().__init__(
             client=client,
             model=model,
             max_tokens=max_tokens,
-            thinking=thinking,
         )
-        if self._thinking and self._max_tokens <= self._thinking_budget:
-            new_max = self._thinking_budget + 1024
-            self._logger.warning(
-                "max_tokens=%d <= thinking budget_tokens=%d; bumping max_tokens to %d",
-                self._max_tokens, self._thinking_budget, new_max,
-            )
-            self._max_tokens = new_max
+        self._thinking_budget = int(self._max_tokens * THINKING_BUDGET_RATIO)
+        self._logger.debug(
+            "thinking_budget=%d (max_tokens=%d, ratio=%.2f)",
+            self._thinking_budget, self._max_tokens, THINKING_BUDGET_RATIO,
+        )
 
     def start(
         self,
@@ -138,12 +136,12 @@ class AnthropicAdapter(ApiAdapter):
         )
 
     def _do_call(self, state: ConversationState) -> Any:
-        extra_kwargs: dict[str, Any] = {}
-        if self._thinking:
-            extra_kwargs["thinking"] = {
+        extra_kwargs: dict[str, Any] = {
+            "thinking": {
                 "type": "enabled",
                 "budget_tokens": self._thinking_budget,
             }
+        }
         return self._client.messages.create(
             model=self._model,
             max_tokens=self._max_tokens,

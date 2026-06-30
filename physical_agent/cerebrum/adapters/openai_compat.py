@@ -24,9 +24,8 @@ class OpenAICompatibleAdapter(ApiAdapter):
         self,
         client: Any,
         model: str,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         *,
-        thinking: bool = False,
         reasoning_effort: str = "xhigh",
     ):
         self._reasoning_effort = reasoning_effort
@@ -34,7 +33,6 @@ class OpenAICompatibleAdapter(ApiAdapter):
             client=client,
             model=model,
             max_tokens=max_tokens,
-            thinking=thinking,
         )
 
     def start(
@@ -145,9 +143,9 @@ class OpenAICompatibleAdapter(ApiAdapter):
         )
 
     def _do_call(self, state: ConversationState) -> Any:
-        extra_kwargs: dict[str, Any] = {}
-        if self._thinking:
-            extra_kwargs["reasoning_effort"] = self._reasoning_effort
+        extra_kwargs: dict[str, Any] = {
+            "reasoning_effort": self._reasoning_effort,
+        }
         response = self._client.chat.completions.create(
             model=self._model,
             messages=state.messages,

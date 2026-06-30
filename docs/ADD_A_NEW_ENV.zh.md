@@ -21,7 +21,7 @@ PhysicalAgent 把一个 env 拆成两个进程:
 physical_agent/envs/myenv/
     __init__.py            # 入口 — get_env_spec() / get_toolkit() 工厂
     myenv_env_client.py    # MyEnvClient — agent 侧 RPC 代理 (§1)
-    prompt_bundle.py       # PROMPTS = PromptBundle(...)             (§2)
+    prompt_bundle.py       # system()/user() prompt 工厂              (§2)
     toolkit.py             # MyEnvToolkit + primitives + tool schemas (§3)
 
 deployment/<backend>/env_server.py    # driver 侧 facade + RPC server (§1)
@@ -33,10 +33,11 @@ lazily import `physical_agent.envs.<name>`, 并调用其两个工厂函数:
 ```python
 # physical_agent/envs/myenv/__init__.py
 from physical_agent.envs.env_spec import EnvSpec
-from physical_agent.envs.myenv.prompt_bundle import PROMPTS
+from physical_agent.envs.prompt_bundle import PromptBundle
+from physical_agent.envs.myenv.prompt_bundle import system_prompt, user_prompt
 
 def get_env_spec() -> EnvSpec:
-    return EnvSpec(name="myenv", prompts=PROMPTS)
+    return EnvSpec(name="myenv", prompts=PromptBundle(system=system_prompt, user=user_prompt))
 
 def get_toolkit(*, primitives_kwargs: dict[str, Any], video_path: str | None = None):
     from physical_agent.envs.myenv.toolkit import MyEnvToolkit
@@ -110,25 +111,38 @@ stdout 上的 `transport_ready` 事件是必须的 — `cli.main.start_env_serve
 
 ## 2. `prompt_bundle.py`
 
-导出一个模块级的 `PROMPTS = PromptBundle(...)` 实例, 填齐 7 个字段。bundle
-持有 runner 在 loop 启动前渲染给 LLM 的字符串:
+定义两个 prompt 工厂 — `system_prompt()` 和 `user_prompt()` —
+并在 env 的 `__init__.py` 中构造 `PromptBundle(system=system_prompt, user=user_prompt)`
+(见上面的入口章节)。每个工厂返回一个有序的 `dict[str, PromptNode]` (带标题的
+分节), 由 `PromptBundle.render` 组装并填充。一份 prompt 服务所有 cerebrum
+(API loop、Claude Code、Codex): 用工具的裸名引用 (`move_to`, ...), 并只需说明
+一次 Claude Code / Codex SDK 会把它们命名空间化为
+`mcp__physical_agent__<name>` — 不要再维护 CLI/API 两份拷贝。
 
 ```python
-PROMPTS = PromptBundle(
-    system_prompt=SYSTEM_PROMPT,
-    initial_user_template=INITIAL_USER_TEMPLATE,
-    perception_prefix=PERCEPTION_PREFIX,
-    perception_user_template=PERCEPTION_USER_TEMPLATE,
-    claude_code_prompt_template=CLAUDE_CODE_PROMPT_TEMPLATE,
-    claude_code_perception_prompt_template=CLAUDE_CODE_PERCEPTION_PROMPT_TEMPLATE,
-    format_claude_code_prompt=format_claude_code_prompt,
-)
+# physical_agent/envs/myenv/prompt_bundle.py
+from physical_agent.context.prompt_utils import PromptNode
+from physical_agent.context.prompts import prompt as base_prompt
+from physical_agent.envs.myenv import prompts as myenv_prompt
+
+def system_prompt() -> dict[str, PromptNode]:
+    return {
+        "Intro": myenv_prompt.PREAMBLE,
+        "Goal": myenv_prompt.GOAL,
+        "Rules": myenv_prompt.RULES,
+        "Workflow": myenv_prompt.WORKFLOW,
+        "Environment": myenv_prompt.ENVIRONMENT,
+        "Output": base_prompt.OUTPUT,
+    }
+
+def user_prompt() -> dict[str, PromptNode]:
+    return dict(base_prompt.USER)
 ```
 
-可以复用 `physical_agent.context.prompt_base` 中的共享字符串, 也可以自己写 —
-都是 `str.format` 风格的模板, 占位符为 `suite` / `task` / `seed` /
-`output_dir` / `recipe_tag`。bundle 在 env 的 `__init__.py` 中被引用 (见上面
-的入口章节), `EnvSpec.prompts` 把它传递给 cerebrum。
+可以复用 `physical_agent.context.prompts.prompt` 中的共享分节 (`OUTPUT`、
+`USER`), 也可以自己写。分节内容是普通字符串 (或 `BulletList` / `Numbered`),
+占位符 `{{suite}}` / `{{task}}` / `{{seed}}` / `{{output_dir}}` /
+`{{recipe_tag}}` 在渲染时填充。
 
 ---
 
@@ -155,8 +169,6 @@ PROMPTS = PromptBundle(
 
 **Toolkit 类** — 继承 `physical_agent.tools.toolkit.Toolkit`:
 
-- 声明 `allowed_mcp_tool_names` (带 `mcp__physical_agent__*` 命名空间的工具名
-  列表, Claude Code / MCP 风格的 cerebrum 用),
 - 在 `__init__` 中通过 `init_driver_clean` 构建 primitive driver (清理过期的
   `images/` 等, 构造 primitives, dump 第 0 步),
 - 用 `self.add_tool(name, spec, handler)` 注册每个工具 — 无状态读取类
@@ -176,8 +188,8 @@ PROMPTS = PromptBundle(
 
 - `output_dir` 是 per-run 的临时目录, 由 runner 创建; 所有工件 (images、
   depths、`states.json`、transcripts、`episode.mp4`) 都写在里面。
-- 工具 schema 是 Anthropic 形状 (`name` / `description` / `input_schema`),
-  toolkit 会自动加上 `mcp__physical_agent__` 前缀供 MCP allowlist 使用。
+- 工具 schema 是 Anthropic 形状 (`name` / `description` / `input_schema`)。
+  每个用 `self.add_tool(...)` 注册的工具都会暴露给所有 cerebrum。
 - Driver 侧的返回值必须可 pickle, 且不含 torch。
 - 每个 primitive 工具执行后要 dump 一次新的状态快照, 这样下一次
   `view_driver_state` 看到的是动作后的世界。

@@ -185,8 +185,6 @@ def main(argv: list[str] | None = None) -> int:
                     help="Pi0.5 /predict server (e.g. http://localhost:8000)")
     ap.add_argument("--env", dest="env_name", default="libero",
                     help="Environment backend for MCP tools.")
-    ap.add_argument("--hide-object-coords", action="store_true",
-                    help="redact GT object world poses from dumped state")
     ap.add_argument("--video-path", default="",
                     help="destination for the episode video (empty = no recording)")
     args = ap.parse_args(argv)
@@ -205,7 +203,6 @@ def main(argv: list[str] | None = None) -> int:
         primitives_kwargs={
             "env": LiberoEnvClient(SocketRpcClient(args.transport_host, args.transport_port)),
             "model": VLAClient(args.vla_endpoint),
-            "hide_object_coords": args.hide_object_coords,
         },
         video_path=args.video_path or None,
     )

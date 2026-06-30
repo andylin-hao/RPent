@@ -51,14 +51,11 @@ class ApiAdapter(ABC):
         self,
         client: Any,
         model: str,
-        max_tokens: int = 4096,
-        *,
-        thinking: bool = False,
+        max_tokens: int = 8192,
     ):
         self._client = client
         self._model = model
         self._max_tokens = max_tokens
-        self._thinking = bool(thinking)
         self._logger = get_logger(self._LOGGER_NAME)
 
     @abstractmethod

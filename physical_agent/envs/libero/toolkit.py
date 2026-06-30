@@ -18,19 +18,6 @@ from physical_agent.utils.logging import get_logger, get_output_dir
 class LiberoToolkit(Toolkit):
     """Toolkit for the LIBERO environment."""
 
-    # MCP tool names this toolkit exposes (namespaced for the SDK allowlist).
-    # LIBERO-specific tool names come from libero_tools.TOOLS_SPEC; the rest
-    # are the common file/IO tools registered by the Toolkit base.
-    _ALLOWED_MCP_TOOL_NAMES = tuple(
-        f"mcp__physical_agent__{name}"
-        for name in (
-            *(spec["name"] for spec in libero_tools.TOOLS_SPEC),
-            "read_text_file",
-            "write_text_file",
-            "mcp_list_dir",
-        )
-    )
-    allowed_mcp_tool_names = _ALLOWED_MCP_TOOL_NAMES
 
     # Tool schemas keyed by name (built once from the canonical ordered list
     # in libero_tools.TOOLS_SPEC) so each tool registers with its own spec.

@@ -33,9 +33,13 @@ export PI05_CHECKPOINT_PATH=/path/to/rlinf-pi05-libero-130-fullshot-sft # downlo
 export LIBERO_TYPE=pro
 export CUDA_DEVICE=0
 
-# run a test task (libero_object_swap task 2, seed 0, with perception enabled), using an anthropic "claude-opus-4-7" model and a max token limit of 8192.
+# run a test task (libero_object_swap task 2, seed 0), using an anthropic "claude-opus-4-8" model and a max token limit of 8192.
 # alternatively, you can specify openai-compatible models using --cerebrum openai_compat --model xxx.
-python cli/main.py --suite libero_object_swap --task 2 --seed 0 --perception --cerebrum anthropic --model claude-opus-4-7 --max_tokens 8192
+python cli/main.py --suite libero_object_swap --task 2 --seed 0 --cerebrum anthropic --model claude-opus-4-8 --max_tokens 8192
 ```
 
-## Adding new environments to Physical Agent
+## Documentation
+
+See the [`docs/`](docs/README.md) folder. For example, to plug in a new
+environment, follow [Adding a new environment](docs/ADD_A_NEW_ENV.md)
+([中文](docs/ADD_A_NEW_ENV.zh.md)).

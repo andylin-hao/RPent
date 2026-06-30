@@ -6,10 +6,8 @@ from typing import Any
 from physical_agent.envs.prompt_bundle import PromptBundle
 from physical_agent.envs.env_spec import EnvSpec
 from physical_agent.envs.libero.prompt_bundle import (
-    api_system,
-    api_user,
-    cli_system,
-    cli_user,
+    system_prompt,
+    user_prompt,
 )
 
 
@@ -22,10 +20,8 @@ def get_env_spec() -> EnvSpec:
     return EnvSpec(
         name="libero",
         prompts=PromptBundle(
-            api_system=api_system,
-            api_user=api_user,
-            cli_system=cli_system,
-            cli_user=cli_user,
+            system=system_prompt,
+            user=user_prompt,
         ),
     )
 

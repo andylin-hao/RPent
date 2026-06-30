@@ -23,7 +23,7 @@ For a new env `myenv`, the file layout is:
 physical_agent/envs/myenv/
     __init__.py            # entry point — get_env_spec() / get_toolkit() factories
     myenv_env_client.py    # MyEnvClient — agent-side RPC stub (§1)
-    prompt_bundle.py       # PROMPTS = PromptBundle(...)              (§2)
+    prompt_bundle.py       # system()/user() prompt factories         (§2)
     toolkit.py             # MyEnvToolkit + primitives + tool schemas (§3)
 
 deployment/<backend>/env_server.py    # driver-side facade + RPC server (§1)
@@ -36,10 +36,11 @@ on demand and calls its two factories:
 ```python
 # physical_agent/envs/myenv/__init__.py
 from physical_agent.envs.env_spec import EnvSpec
-from physical_agent.envs.myenv.prompt_bundle import PROMPTS
+from physical_agent.envs.prompt_bundle import PromptBundle
+from physical_agent.envs.myenv.prompt_bundle import system_prompt, user_prompt
 
 def get_env_spec() -> EnvSpec:
-    return EnvSpec(name="myenv", prompts=PROMPTS)
+    return EnvSpec(name="myenv", prompts=PromptBundle(system=system_prompt, user=user_prompt))
 
 def get_toolkit(*, primitives_kwargs: dict[str, Any], video_path: str | None = None):
     from physical_agent.envs.myenv.toolkit import MyEnvToolkit
@@ -118,27 +119,39 @@ two callsites out behind a per-env helper.
 
 ## 2. `prompt_bundle.py`
 
-Export a single module-level `PROMPTS = PromptBundle(...)` instance with all
-seven fields populated. The bundle carries the LLM-facing strings the runner
-renders before the loop starts:
+Define two prompt factories — `system_prompt()` and
+`user_prompt()` — and build a `PromptBundle(system=system_prompt, user=user_prompt)`
+in the env's `__init__.py` (see entry point above). Each factory returns an
+ordered `dict[str, PromptNode]` of titled sections; `PromptBundle.render`
+assembles and fills them. One prompt serves every cerebrum (API loop, Claude
+Code, Codex): refer to tools by their bare names (`move_to`, ...) and note
+once that the Claude Code / Codex SDK shows them namespaced as
+`mcp__physical_agent__<name>` — do not maintain separate CLI/API copies.
 
 ```python
-PROMPTS = PromptBundle(
-    system_prompt=SYSTEM_PROMPT,
-    initial_user_template=INITIAL_USER_TEMPLATE,
-    perception_prefix=PERCEPTION_PREFIX,
-    perception_user_template=PERCEPTION_USER_TEMPLATE,
-    claude_code_prompt_template=CLAUDE_CODE_PROMPT_TEMPLATE,
-    claude_code_perception_prompt_template=CLAUDE_CODE_PERCEPTION_PROMPT_TEMPLATE,
-    format_claude_code_prompt=format_claude_code_prompt,
-)
+# physical_agent/envs/myenv/prompt_bundle.py
+from physical_agent.context.prompt_utils import PromptNode
+from physical_agent.context.prompts import prompt as base_prompt
+from physical_agent.envs.myenv import prompts as myenv_prompt
+
+def system_prompt() -> dict[str, PromptNode]:
+    return {
+        "Intro": myenv_prompt.PREAMBLE,
+        "Goal": myenv_prompt.GOAL,
+        "Rules": myenv_prompt.RULES,
+        "Workflow": myenv_prompt.WORKFLOW,
+        "Environment": myenv_prompt.ENVIRONMENT,
+        "Output": base_prompt.OUTPUT,
+    }
+
+def user_prompt() -> dict[str, PromptNode]:
+    return dict(base_prompt.USER)
 ```
 
-Either reuse the shared strings in `physical_agent.context.prompt_base`, or
-write your own — they're plain `str.format`-style templates that take
-`suite` / `task` / `seed` / `output_dir` / `recipe_tag`. The bundle is
-referenced from the env's `__init__.py` (see entry point above), and
-`EnvSpec.prompts` carries it to the cerebrum.
+Reuse the shared sections in `physical_agent.context.prompts.prompt`
+(`OUTPUT`, `USER`) or write your own. Section bodies are plain strings (or
+`BulletList` / `Numbered`) with `{{suite}}` / `{{task}}` / `{{seed}}` /
+`{{output_dir}}` / `{{recipe_tag}}` placeholders filled at render time.
 
 ---
 
@@ -168,8 +181,6 @@ serializes whatever state the agent will read back via the `view_*` tools
 
 **Toolkit class** — subclass `physical_agent.tools.toolkit.Toolkit`:
 
-- declare `allowed_mcp_tool_names` (the namespaced `mcp__physical_agent__*`
-  list, used by Claude Code / MCP-style cerebrums),
 - build the primitive driver in `__init__` via `init_driver_clean`
   (wipes stale `images/` etc., constructs the primitives, dumps step 0),
 - register each tool with `self.add_tool(name, spec, handler)` — stateless
@@ -190,8 +201,8 @@ typically `{"env": MyEnvClient(...), "model": VLAClient(...), ...}`.
 - `output_dir` is the per-run scratch directory and is created by the runner;
   every artifact (images, depths, `states.json`, transcripts, `episode.mp4`)
   goes there.
-- Tool schemas are Anthropic-shaped (`name` / `description` / `input_schema`)
-  and the toolkit prepends `mcp__physical_agent__` for the MCP allowlist.
+- Tool schemas are Anthropic-shaped (`name` / `description` / `input_schema`).
+  Every tool registered with `self.add_tool(...)` is exposed to all cerebrums.
 - Driver-side return values must be picklable and torch-free.
 - Each primitive tool dumps a fresh state snapshot after running so the next
   `view_driver_state` call reflects the post-action world.

@@ -271,7 +271,7 @@ def _build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--model", default=None,
                     help="Model id. Defaults to the selected backend's model env var.")
     ap.add_argument("--max_turns", type=int, default=100)
-    ap.add_argument("--max_tokens", type=int, default=4096)
+    ap.add_argument("--max_tokens", type=int, default=8192)
     ap.add_argument("--max_episode_steps", type=int, default=600)
     ap.add_argument("--cuda_device", default=None,
                     help="GPU device. Defaults to CUDA_DEVICE env or 0.")
@@ -283,18 +283,15 @@ def _build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--cerebrum", default="anthropic",
                     choices=["anthropic", "openai_compat", "claude_code", "codex"],
                     help="LLM backend: anthropic | openai_compat | claude_code | codex.")
-    ap.add_argument("--thinking", action="store_true",
-                    help="Enable extended thinking / reasoning for anthropic and "
-                         "openai_compat backends (no-op for claude_code/codex).")
     ap.add_argument("--claude_code_timeout_s", type=int, default=None,
-                    help="Wall-clock cap for claude -p. Defaults to CELL_TIMEOUT_S, "
-                         "or 1200 in --perception mode / 600 otherwise.")
+                    help="Wall-clock cap for claude -p. Defaults to CELL_TIMEOUT_S "
+                         "or 1200.")
     ap.add_argument("--claude_code_max_budget_usd", type=float, default=None,
                     help="Budget passed to claude -p --max-budget-usd. "
                          "Defaults to MAX_BUDGET_USD env or 10.")
     ap.add_argument("--codex_timeout_s", type=int, default=None,
                     help="Wall-clock cap for codex exec. Defaults to CODEX_TIMEOUT_S, "
-                         "or CELL_TIMEOUT_S, or 1200 in --perception mode / 600 otherwise.")
+                         "CELL_TIMEOUT_S, or 1200.")
     ap.add_argument("--no_driver", action="store_true",
                     help="Don't spawn driver; attach to existing output dir")
     ap.add_argument("--transport_host", default="127.0.0.1",
@@ -306,13 +303,12 @@ def _build_argparser() -> argparse.ArgumentParser:
                     help="Base URL of an existing vla_server (e.g. http://host:8000). "
                          "If omitted with a spawned driver, a local vla_server is started; "
                          "required with --no_driver.")
-    ap.add_argument("--perception", action="store_true",
-                    help="PERCEPTION-ISOLATED mode: hide object coords, "
-                         "use camera+depth+back_project for localization.")
     ap.add_argument("--libero_type", default=None,
                     choices=["standard", "pro", "plus"],
                     help="LIBERO variant (auto-routed from suite suffix if not set).")
-    ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--verbose", action="store_true",
+                    help="Enable DEBUG-level logging for stdout and the run.log "
+                         "file. Defaults to INFO when not set.")
     return ap
 
 
@@ -337,7 +333,7 @@ def main() -> int:
     if output_dir is None:
         timestamp = datetime.now().strftime("%Y%m%d-%H:%M:%S")
         output_dir = get_repo_root() / "logs" / f"{timestamp}_{suite}_t{task}_s{seed}"
-    output_dir = init_output_dir(output_dir)
+    output_dir = init_output_dir(output_dir, verbose=args.verbose)
 
     recipe_tag = f"{suite.replace('libero_', '')}_t{task}_s{seed}"
 
@@ -350,8 +346,6 @@ def main() -> int:
         base_url=args.base_url,
         model=args.model,
         max_tokens=args.max_tokens,
-        perception=args.perception,
-        thinking=args.thinking,
         claude_code_timeout_s=args.claude_code_timeout_s,
         claude_code_max_budget_usd=args.claude_code_max_budget_usd,
         codex_timeout_s=args.codex_timeout_s,
@@ -369,28 +363,14 @@ def main() -> int:
         "output_dir": output_dir,
         "recipe_tag": recipe_tag,
     }
-    if args.cerebrum in {"claude_code", "codex"}:
-        system_prompt = prompt_bundle.render(
-            "cli_system",
-            variables=prompt_vars,
-            perception=args.perception,
-        )
-        user_msg = prompt_bundle.render(
-            "cli_user",
-            variables=prompt_vars,
-            perception=args.perception,
-        )
-    else:
-        system_prompt = prompt_bundle.render(
-            "api_system",
-            variables=prompt_vars,
-            perception=args.perception,
-        )
-        user_msg = prompt_bundle.render(
-            "api_user",
-            variables=prompt_vars,
-            perception=args.perception,
-        )
+    system_prompt = prompt_bundle.render(
+        "system",
+        variables=prompt_vars,
+    )
+    user_msg = prompt_bundle.render(
+        "user",
+        variables=prompt_vars,
+    )
 
     env_proc = None
     vla_proc = None
@@ -432,7 +412,6 @@ def main() -> int:
                     },
                 ),
                 "model": VLAClient(vla_endpoint),
-                "hide_object_coords": args.perception,
             },
             video_path=str(Path(output_dir) / "episode.mp4"),
         )
@@ -462,7 +441,6 @@ def main() -> int:
                     },
                 ),
                 "model": VLAClient(vla_endpoint),
-                "hide_object_coords": args.perception,
             },
             video_path=str(Path(output_dir) / "episode.mp4"),
         )

@@ -18,7 +18,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from physical_agent.cerebrum.base import CerebrumResult
+from physical_agent.cerebrum.base import (
+    CerebrumResult,
+    add_mcp_prefix,
+    strip_mcp_prefix,
+)
 from physical_agent.tools.toolkit import Toolkit
 from physical_agent.utils.config import get_repo_root
 from physical_agent.utils.logging import get_logger, init_output_dir
@@ -44,7 +48,6 @@ class ClaudeCodeCerebrum:
         max_budget_usd: float = 10.0,
         extra_dirs: list[str] | None = None,
         output_path: str | Path | None = None,
-        hide_object_coords: bool = False,
         video_path: str = "",
     ):
         """Initialize the Claude Agent SDK backend."""
@@ -56,7 +59,6 @@ class ClaudeCodeCerebrum:
         self._max_budget_usd = max_budget_usd
         self._extra_dirs = extra_dirs or []
         self._output_path = Path(output_path) if output_path else None
-        self._hide_object_coords = bool(hide_object_coords)
         self._video_path = video_path
 
     def solve(
@@ -173,7 +175,9 @@ class ClaudeCodeCerebrum:
             part for part in self._allowed_tools.replace(",", " ").split() if part
         ]
         builtins = [name for name in allowed if "__" not in name]
-        allowed.extend(toolkit.allowed_mcp_tool_names)
+        allowed.extend(
+            add_mcp_prefix(str(spec["name"])) for spec in toolkit.get_tools_spec()
+        )
 
         return sdk.ClaudeAgentOptions(
             cwd=self._repo_root,
@@ -272,12 +276,10 @@ class _Recorder:
                     )
             elif block_kind == "ToolUseBlock":
                 tool_id = str(_get(block, "id", ""))
-                name = str(_get(block, "name", "tool"))
+                name = strip_mcp_prefix(str(_get(block, "name", "tool")))
                 self.tool_names[tool_id] = name
                 tool_input = _get(block, "input", {}) or {}
-                if name in {"finish", "mcp__physical_agent__finish"} and isinstance(
-                    tool_input, dict
-                ):
+                if name == "finish" and isinstance(tool_input, dict):
                     self.pending_finish[tool_id] = dict(tool_input)
                 lines.append(f"[tool->] {name}: {_short_json(tool_input, limit=500)}\n")
             elif block_kind == "ToolResultBlock":

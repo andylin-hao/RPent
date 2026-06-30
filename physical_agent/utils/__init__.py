@@ -2,7 +2,7 @@
 
 from physical_agent.utils.logging import get_logger, get_output_dir, init_output_dir  # noqa: F401
 from physical_agent.utils.templates import (  # noqa: F401
-    bind_placeholders,
-    bind_text,
-    default_replacements,
+    default_variables,
+    substitute,
+    substitute_text,
 )

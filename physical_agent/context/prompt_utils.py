@@ -1,11 +1,12 @@
 """Python prompt rendering primitives."""
 from __future__ import annotations
 
-import re
 import textwrap
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+
+from physical_agent.utils.templates import substitute_text
 
 
 @dataclass(frozen=True)
@@ -32,8 +33,6 @@ class Numbered:
 
 PromptNode = str | Mapping[str, Any] | Sequence[Any] | BulletList | Numbered
 
-_PLACEHOLDER = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
-
 
 def format_prompt(
     prompt: PromptNode,
@@ -49,7 +48,7 @@ def _render(value: Any, variables: Mapping[str, str], *, depth: int) -> str:
     if value is None:
         return ""
     if isinstance(value, str):
-        return _substitute(_clean_text(value), variables)
+        return substitute_text(_clean_text(value), variables, strict=True)
     if isinstance(value, BulletList):
         return _render_list(value.items, variables, depth=depth, ordered=False)
     if isinstance(value, Numbered):
@@ -109,13 +108,6 @@ def _render_list(
 
 def _clean_text(text: str) -> str:
     return textwrap.dedent(text).strip()
-
-
-def _substitute(text: str, variables: Mapping[str, str]) -> str:
-    def _sub(match: re.Match[str]) -> str:
-        return variables[match.group(1)]
-
-    return _PLACEHOLDER.sub(_sub, text)
 
 
 def _title(value: str) -> str:

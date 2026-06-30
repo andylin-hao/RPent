@@ -40,11 +40,9 @@ class LiberoPrimitives:
         self,
         env: LiberoEnvClient,
         model: VLAClient,
-        hide_object_coords: bool = False,
     ):
         self.env = env
         self.model = model
-        self.hide_object_coords = hide_object_coords
         self._last_obs = None
         self._last_obs_eef_pos = None
         self._last_obs_eef_z = None
@@ -769,14 +767,13 @@ def dump_state(driver: LiberoPrimitives, output_dir: str, step_idx: int,
     os.makedirs(images_cam_dir, exist_ok=True)
     os.makedirs(depths_dir, exist_ok=True)
     state = driver.get_privileged_state()
-    # PERCEPTION-ISOLATED mode: drop object world coords (the agent must
+    # force perception: drop object world coords (the agent must
     # localize via depth_NN.npy + camera_meta.json). Keep the object NAMES
     # (what's in the scene / which is the target) + robot proprioception —
     # names are not coordinate info and are also implied by the task language.
-    if driver.hide_object_coords:
-        objs = state.get("objects", {})
-        state["object_names"] = sorted(objs.keys())
-        state.pop("objects", None)
+    objs = state.get("objects", {})
+    state["object_names"] = sorted(objs.keys())
+    state.pop("objects", None)
     # Try render_agentview (live obs from env). When the image observable
     # is disabled, raw_obs has no image key OR robosuite returns a
     # degenerate (1,1,3) float64 placeholder. Fall back to the most
@@ -891,7 +888,7 @@ TOOLS_SPEC = [
         "name": "view_driver_state",
         "description": (
             "Read step NN from `states.json` + the matching "
-            "`images/image_NN.png` in {output_dir}. If step is "
+            "`images/image_NN.png` in {{output_dir}}. If step is "
             "null, returns the latest entry. Each entry contains the robot "
             "state, libero_terminated flag, command log, and result. Embeds "
             "the agentview PNG as a multimodal image content block (use this "
@@ -1080,9 +1077,7 @@ TOOLS_SPEC = [
         "description": (
             "Read camera_meta.json from the output dir. Returns the camera "
             "intrinsics matrix K (3x3), the camera-to-world extrinsic matrix "
-            "(4x4), image dimensions, and the back-projection recipe. Use this "
-            "in PERCEPTION-ISOLATED mode to localize objects — you do NOT get "
-            "GT world coordinates."
+            "(4x4), image dimensions, and the back-projection recipe."
         ),
         "input_schema": {
             "type": "object",
@@ -1232,14 +1227,13 @@ def finish(status: str, summary: str) -> dict:
 
 
 def view_camera_meta() -> dict:
-    """Read camera calibration metadata for perception-mode localization."""
+    """Read camera calibration metadata for localization."""
     try:
         meta = _load_camera_meta()
     except Exception:
         return {
             "error": (
-                f"camera metadata not found for output dir {get_output_dir()}; "
-                "is the driver running in perception mode?"
+                f"camera metadata not found for output dir {get_output_dir()}"
             )
         }
     return {"camera_meta": meta}

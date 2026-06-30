@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 import traceback
 from typing import Any, ClassVar
 
-from physical_agent.utils.templates import bind_placeholders
+from physical_agent.utils.templates import substitute
 
 
 @dataclass
@@ -88,14 +88,8 @@ class Toolkit:
     subclasses receive their env/model/etc. as constructor arguments and
     build the underlying primitive driver in ``__init__``; the toolkit
     base class only contributes the common file/IO tools. Override
-    :meth:`close` to release env-side drivers at the end
-    of the run, and set :attr:`allowed_mcp_tool_names` to expose tools
-    over MCP.
+    :meth:`close` to release env-side drivers at the end of the run.
     """
-
-    #: MCP allowlist contributed by this toolkit (namespaced tool names).
-    #: Env toolkits override with their own tuple; empty by default.
-    allowed_mcp_tool_names: tuple[str, ...] = ()
 
     def __init__(self) -> None:
         # name -> (spec, handler)
@@ -137,7 +131,7 @@ class Toolkit:
 
     def get_tools_spec(self) -> list[dict[str, Any]]:
         """Return the tool schemas the LLM sees."""
-        return bind_placeholders(
+        return substitute(
             [spec for spec, _ in self._tools.values()]
         )
 

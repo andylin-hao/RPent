@@ -30,6 +30,7 @@ def get_toolkit(
     *,
     primitives_kwargs: dict[str, Any],
     video_path: str | None = None,
+    dashboard: Any = None,
 ):
     """Return the LIBERO toolkit (common tools + LIBERO primitives)."""
     from physical_agent.envs.libero.toolkit import LiberoToolkit
@@ -37,4 +38,5 @@ def get_toolkit(
     return LiberoToolkit(
         primitives_kwargs=primitives_kwargs,
         video_path=video_path,
+        dashboard=dashboard,
     )

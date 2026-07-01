@@ -262,9 +262,9 @@ def _build_argparser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         description="Standalone hybrid LLM-in-the-loop agent for LIBERO PRO",
     )
-    ap.add_argument("--suite", required=True,
+    ap.add_argument("--suite", default=None,
                     help="e.g. libero_object_task, libero_spatial_swap")
-    ap.add_argument("--task", type=int, required=True)
+    ap.add_argument("--task", type=int, default=None)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--env", dest="env_name", default="libero",
                     help="Environment backend. Defaults to libero.")
@@ -306,6 +306,12 @@ def _build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--libero_type", default=None,
                     choices=["standard", "pro", "plus"],
                     help="LIBERO variant (auto-routed from suite suffix if not set).")
+    ap.add_argument("--dashboard", action="store_true",
+                    help="Start a local dashboard server for this single run.")
+    ap.add_argument("--dashboard_host", default="127.0.0.1",
+                    help="Dashboard bind host. Defaults to 127.0.0.1.")
+    ap.add_argument("--dashboard_port", type=int, default=0,
+                    help="Dashboard port. 0 asks the OS for a free port.")
     ap.add_argument("--verbose", action="store_true",
                     help="Enable DEBUG-level logging for stdout and the run.log "
                          "file. Defaults to INFO when not set.")
@@ -313,8 +319,36 @@ def _build_argparser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    ap = _build_argparser()
-    args = ap.parse_args()
+    parser = _build_argparser()
+    args = parser.parse_args()
+
+    # With --dashboard, open the launcher first: serve the start screen, then
+    # block until the user clicks Run and overlay their choices onto args.
+    # Everything downstream (output_dir, State, run loop) then sees final args.
+    dashboard_server = None
+    dashboard_url = None
+    if args.dashboard:
+        from physical_agent.dashboard import DashboardServer
+        from physical_agent.dashboard.launcher import apply_to_args, defaults_from_args
+
+        dashboard_server = DashboardServer(
+            host=args.dashboard_host, port=args.dashboard_port
+        )
+        dashboard_url = dashboard_server.start()
+        logger.info(
+            "Dashboard: %s. Open it, adjust the run config, and click Run to start.",
+            dashboard_url,
+        )
+        launch_config = dashboard_server.wait_for_launch(
+            defaults=defaults_from_args(args)
+        )
+        apply_to_args(args, launch_config)
+        logger.info("launcher config applied: %s", launch_config)
+
+    if not args.suite:
+        parser.error("--suite is required")
+    if args.task is None:
+        parser.error("--task is required")
 
     suite = args.suite
     task = args.task
@@ -337,6 +371,23 @@ def main() -> int:
 
     recipe_tag = f"{suite.replace('libero_', '')}_t{task}_s{seed}"
 
+    dashboard_state = None
+    if args.dashboard and dashboard_server is not None:
+        from physical_agent.dashboard.state import State
+
+        dashboard_state = State(
+            run_id=f"{suite}/{output_dir.name}",
+            name=recipe_tag,
+            suite=suite,
+            task=task,
+            seed=seed,
+            output_dir=str(output_dir),
+            video_path=str(Path(output_dir) / "episode.mp4"),
+        )
+        # Server is already serving the launcher; register the run so the
+        # frontend can switch from the start screen to the live monitor.
+        dashboard_server.register(dashboard_state)
+
     cerebrum = build_cerebrum(
         args.cerebrum,
         output_dir=output_dir,
@@ -351,6 +402,7 @@ def main() -> int:
         codex_timeout_s=args.codex_timeout_s,
         transport_host=args.transport_host,
         transport_port=args.transport_port,
+        dashboard=dashboard_state,
     )
 
     # Auto-route LIBERO_TYPE if not set
@@ -414,6 +466,7 @@ def main() -> int:
                 "model": VLAClient(vla_endpoint),
             },
             video_path=str(Path(output_dir) / "episode.mp4"),
+            dashboard=dashboard_state,
         )
     else:
         if args.transport_port <= 0:
@@ -443,6 +496,7 @@ def main() -> int:
                 "model": VLAClient(vla_endpoint),
             },
             video_path=str(Path(output_dir) / "episode.mp4"),
+            dashboard=dashboard_state,
         )
 
     t0 = time.time()
@@ -493,6 +547,17 @@ def main() -> int:
     logger.info("transcript: %s", transcript_path)
     if agent_error:
         logger.error("error: %s", agent_error)
+
+    if args.dashboard and dashboard_state is not None:
+        dashboard_state.mark_done()
+        logger.info(
+            "Run finished. Dashboard still serving at %s. Press Ctrl+C to stop.",
+            dashboard_url,
+        )
+        try:
+            threading.Event().wait()
+        except KeyboardInterrupt:
+            pass
     return 0
 
 

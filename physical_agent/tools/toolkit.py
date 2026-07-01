@@ -91,9 +91,10 @@ class Toolkit:
     :meth:`close` to release env-side drivers at the end of the run.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, dashboard: Any = None) -> None:
         # name -> (spec, handler)
         self._tools: dict[str, tuple[dict[str, Any], Callable[..., dict[str, Any]]]] = {}
+        self._dashboard = dashboard
         self._register_common_tools()
 
     # ------------------------------------------------------------------
@@ -147,6 +148,8 @@ class Toolkit:
             result = {"error": f"bad arguments for {name}: {e}", "got": input_dict}
         except Exception as e:
             result = {"error": str(e), "traceback": traceback.format_exc()}
+        if self._dashboard is not None:
+            self._dashboard.on_tool_result(name, result)
         return ToolResult(name=name, result=result)
 
     # ------------------------------------------------------------------

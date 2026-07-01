@@ -128,7 +128,7 @@ def load_model(model_path: str | None) -> None:
 
 
 def _decode_image_block(block: dict[str, Any]) -> np.ndarray:
-    import imageio.v2 as imageio 
+    import imageio.v2 as imageio
     fmt = (block.get("format") or "png").lower()
     if fmt != "png":
         raise ValueError(f"unsupported image format: {fmt!r} (only 'png')")

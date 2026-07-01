@@ -108,6 +108,7 @@ def build_cerebrum(
     codex_timeout_s: int | None = None,
     transport_host: str = "127.0.0.1",
     transport_port: int = 0,
+    dashboard: Any = None,
 ):
     """Build a cerebrum for the given backend, resolving credentials from env vars."""
     # Imports are deferred to avoid a circular import: api_loop / claude_code /
@@ -179,6 +180,7 @@ def build_cerebrum(
             extra_dirs=[str(get_memory_dir())],
             output_path=Path(output_dir) / f"claude_{recipe_tag}.txt",
             video_path=str(Path(output_dir) / "episode.mp4"),
+            dashboard=dashboard,
         )
     if cerebrum_type == "codex":
         from physical_agent.cerebrum.codex import CodexCerebrum

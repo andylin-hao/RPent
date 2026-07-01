@@ -49,6 +49,7 @@ class ClaudeCodeCerebrum:
         extra_dirs: list[str] | None = None,
         output_path: str | Path | None = None,
         video_path: str = "",
+        dashboard: Any = None,
     ):
         """Initialize the Claude Agent SDK backend."""
         self._output_dir = str(output_dir)
@@ -60,6 +61,7 @@ class ClaudeCodeCerebrum:
         self._extra_dirs = extra_dirs or []
         self._output_path = Path(output_path) if output_path else None
         self._video_path = video_path
+        self._dashboard = dashboard
 
     def solve(
         self,
@@ -99,7 +101,7 @@ class ClaudeCodeCerebrum:
             output_path = self._output_path
             output_path.parent.mkdir(parents=True, exist_ok=True)
         raw_stream_path = output_path.with_suffix(output_path.suffix + ".stream.jsonl")
-        recorder = _Recorder(max_turns=max_turns)
+        recorder = _Recorder(max_turns=max_turns, dashboard=self._dashboard)
 
         init_output_dir(self._output_dir)
         options = self._build_options(sdk, toolkit=toolkit, max_turns=max_turns)
@@ -213,6 +215,7 @@ class _Recorder:
     """
 
     max_turns: int
+    dashboard: Any = None
     turns: int = 0
     tool_calls: int = 0
     tool_names: dict[str, str] = field(default_factory=dict)
@@ -242,14 +245,22 @@ class _Recorder:
     def observe(self, message: Any) -> str:
         kind = _kind(message)
         if kind == "SystemMessage":
-            return self._system(message)
-        if kind == "AssistantMessage":
-            return self._assistant(message)
-        if kind == "UserMessage":
-            return self._user(message)
-        if kind == "ResultMessage":
-            return self._result(message)
-        return ""
+            rendered = self._system(message)
+        elif kind == "AssistantMessage":
+            rendered = self._assistant(message)
+        elif kind == "UserMessage":
+            rendered = self._user(message)
+        elif kind == "ResultMessage":
+            rendered = self._result(message)
+        else:
+            rendered = ""
+        if self.dashboard is not None:
+            self.dashboard.on_usage(
+                inp=self.usage["total_input_tokens"],
+                out=self.usage["total_output_tokens"],
+                tool_calls=self.tool_calls,
+            )
+        return rendered
 
     # -- per-message handlers ---------------------------------------------
 
@@ -274,6 +285,8 @@ class _Recorder:
                         f"\n[agent] === turn {self.turns}/{self.max_turns} ===\n"
                         f"[claude] {text}\n"
                     )
+                    if self.dashboard is not None:
+                        self.dashboard.on_event({"type": "text", "text": text})
             elif block_kind == "ToolUseBlock":
                 tool_id = str(_get(block, "id", ""))
                 name = strip_mcp_prefix(str(_get(block, "name", "tool")))
@@ -282,6 +295,10 @@ class _Recorder:
                 if name == "finish" and isinstance(tool_input, dict):
                     self.pending_finish[tool_id] = dict(tool_input)
                 lines.append(f"[tool->] {name}: {_short_json(tool_input, limit=500)}\n")
+                if self.dashboard is not None:
+                    self.dashboard.on_event(
+                        {"type": "tool_call", "tool": name, "args": tool_input}
+                    )
             elif block_kind == "ToolResultBlock":
                 lines.append(self._tool_result(block))
         if assistant_error := _get(message, "error"):
@@ -326,6 +343,14 @@ class _Recorder:
         pending = self.pending_finish.pop(tool_use_id, None)
         if pending is not None and not is_error and self.finish_result is None:
             self.finish_result = {"_finish": True, **pending}
+        if self.dashboard is not None:
+            self.dashboard.on_event(
+                {
+                    "type": "tool_result",
+                    "tool": name,
+                    "result": {**summary, "is_error": bool(is_error)},
+                }
+            )
         return f"[tool<-] {name}: {json.dumps(summary, ensure_ascii=False)}\n"
 
     def _result(self, message: Any) -> str:

@@ -61,6 +61,9 @@ class LiberoPrimitives:
         if self._recording:
             self._frames.append(self.render_agentview())
 
+    def recorded_frame_count(self) -> int:
+        return len(self._frames)
+
     def stop_recording_and_save(self, path: str, fps: int = 20,
                                  keep_recording: bool = False):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -71,6 +74,14 @@ class LiberoPrimitives:
             self._recording = False
             self._frames = []
         return {"path": path, "n_frames": n}
+
+    def save_frame_slice(self, start: int, path: str, fps: int = 20):
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        frames = list(self._frames[int(start):])
+        n = len(frames)
+        if n > 0:
+            imageio.mimwrite(path, frames, fps=fps)
+        return {"path": path, "n_frames": n, "fps": fps}
 
     def set_obs(self, obs):
         self._last_obs = obs

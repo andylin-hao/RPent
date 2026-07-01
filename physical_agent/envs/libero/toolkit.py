@@ -28,8 +28,9 @@ class LiberoToolkit(Toolkit):
         *,
         primitives_kwargs: dict[str, Any],
         video_path: str | None = None,
+        dashboard: Any = None,
     ) -> None:
-        super().__init__()
+        super().__init__(dashboard=dashboard)
         self._next_step: int = 0
         self._video_path: str | None = video_path
         self.init_driver_clean(primitives_kwargs=primitives_kwargs)
@@ -67,6 +68,7 @@ class LiberoToolkit(Toolkit):
         """
         command = {"action": name, **kwargs}
         t0 = time.time()
+        start_frame = self._driver.recorded_frame_count()
         result = getattr(self._driver, name)(**kwargs)
         elapsed = round(time.time() - t0, 2)
 
@@ -77,6 +79,15 @@ class LiberoToolkit(Toolkit):
 
         self._next_step += 1
         step_idx = self._next_step
+        if self._dashboard is not None:
+            video_dir = get_output_dir() / "action_videos"
+            video_path = video_dir / f"step_{step_idx:02d}_{name}.mp4"
+            try:
+                self._driver.save_frame_slice(start_frame, str(video_path), fps=20)
+            except Exception as e:
+                get_logger("libero_toolkit").warning(
+                    f"failed to save action clip to {video_path}: {e}"
+                )
         libero_tools.dump_state(
             self._driver,
             str(get_output_dir()),
@@ -95,7 +106,7 @@ class LiberoToolkit(Toolkit):
         """Wipe stale run artifacts, build the primitive driver, dump step 0."""
         out_dir = get_output_dir()
         out_dir.mkdir(parents=True, exist_ok=True)
-        for sub in ("images", "images_cam", "depths"):
+        for sub in ("images", "images_cam", "depths", "action_videos"):
             target = out_dir / sub
             if target.exists():
                 shutil.rmtree(target)
@@ -108,6 +119,8 @@ class LiberoToolkit(Toolkit):
         driver.reset()
         driver.start_recording()
         libero_tools.dump_state(driver, str(out_dir), step_idx=0, log=None)
+        if self._dashboard is not None:
+            self._dashboard.on_tool_result("view_driver_state", libero_tools.view_driver_state(0))
 
         self._driver = driver
 

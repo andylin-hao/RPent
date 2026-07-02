@@ -127,6 +127,9 @@ class ClaudeCodeCerebrum:
                             out_f.write(rendered)
                             out_f.flush()
                             logger.info(rendered.rstrip())
+                        if recorder.finish_result is not None:
+                            logger.info("FINISH called: %s", recorder.finish_result)
+                            break
 
                 await asyncio.wait_for(consume_stream(), timeout=self._timeout_s)
             except asyncio.TimeoutError:

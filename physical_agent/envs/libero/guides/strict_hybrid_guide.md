@@ -1,1254 +1,608 @@
-# Strict Hybrid LLM + Pi0.5 — Handover Guide
+# Strict Hybrid LLM + Pi0.5 — Perception-Isolated Guide
 
-## Current LIBERO MCP Runtime Contract
+You are taking over a hybrid LIBERO experiment in **perception-isolated** mode
+— the only mode in this repository (the legacy oracle-state mode, where the
+state JSON carried GT object coordinates, is not included here).
 
-This guide contains historical notes from earlier LIBERO driver iterations.
+> **Pi0.5 only does the grasp (`pi0_pick`). The LLM (you) handles every motion
+> (`move_to`), every release, sequencing, retries — and you do not get GT
+> object coordinates. You localize objects yourself from the depth + camera
+> calibration the driver dumps each step.**
 
-- Use structured MCP tools only. Do not issue file-based driver commands.
-- Do not start, stop, or restart `env_server.py`; the runner manages it.
-- Do not read BDDL files, import benchmark internals, or use hidden task
-  definition files. Use the current prompt-provided task text, and
-  `task_language` only when the runtime exposes it.
-- Do not expect object world coordinates in `states.json`; localize objects
-  through images_cam + depth/back_project, segment, and wrist/high-res
-  artifacts when available.
-- Do not call `reset` or `exit` in current single-episode runs unless the
-  runner explicitly exposes and allows it.
-- Do not use object-pose lift oracles in perception-isolated runs unless this
-  is an explicit oracle/debug ablation.
-- `pi0_doubled` is only for non-pick contact skills such as turning a stove,
-  pressing a button, or a short physical push. Do not use it as a general
-  pick/place shortcut.
+## What's different from legacy oracle mode (read this first)
 
-You are taking over a hybrid LIBERO experiment from a previous session. This
-guide is everything you need to know to continue iterating on **strict** hybrid:
+| | legacy oracle mode (not in this repo) | **perception (this guide)** |
+|---|---|---|
+| how object coords are withheld | (none — full GT coords in `state`) | **the runner withholds them: `states.json` carries `object_names` only, no coordinates** |
+| `states.json` objects | full `objects:{name:[x,y,z]}` | **`object_names:[…]` only — NO coords** |
+| how you learn the task | env prompt / BDDL | **`states.json[NN].task_language`** (authoritative `:language`, coord-free) — never scrape the BDDL |
+| extra obs artifacts | `images/image_NN.png` only | **+ `images_cam/`, `depths/`, `world/` (agentview); `images_wrist/`, `depths_wrist/`, `world_wrist/`, `wrist_meta/` (wrist); top-level `camera_meta.json`; hi-res `images_cam_hi/`, `world_hi/`, `images_wrist_hi/`, `world_wrist_hi/`** |
+| cameras | agentview only | **agentview (fixed, ~1m → ±8–13 cm) + eye-in-hand wrist (moves with gripper, ±1–2 cm when <20 cm to target)** — coarse→fine, see below |
+| how you get an object's xyz | read `state["objects"][name]` | **pick the object pixel, then `back_project({"row":ROW,"col":COL,"step":NN})` (K⁻¹+extrinsic already done); refine with the wrist map up close** |
+| how you confirm the grasp | GT object-lift oracle | **grasp-only, no oracle — you judge the grasp from gripper width + wrist cam (Rule 1 / 1b)** |
+| how you pick which of two identical objects | read their distinct coords | **by SPATIAL RELATION from `task_language` (elevation / left-right), never by `_1`/`_2` name** |
+| cell budget | 600 (short suites) | **1200** — perceptual localization + manipulation is slower |
+| audit `regime` | `strict` | `strict_perception` |
 
-> **Pi0.5 only does `pick` (the gripper grasp). The LLM (you) handles
-> everything else — motion planning (move_to), release, sequencing, retries,
-> sanity-checking — by calling structured MCP tools and reading state/image
-> dumps.**
+How localization works (the core of this mode):
+
+The driver already back-projects EVERY pixel for you into world coordinates and
+saves them as `world/world_NN.npy` (agentview) and `world_wrist/world_wrist_NN.npy`
+(wrist) — both in the SAME world frame. **You do NOT write back-projection math;
+you pick a pixel and call `back_project`, which indexes the map for you.**
+
+> **Path convention:** below, a bare file name refers to the file inside its own
+> `output_dir` subdirectory — e.g. `image_cam_hi_NN.png` lives at
+> `images_cam_hi/image_cam_hi_NN.png`, `world_NN.npy` at `world/world_NN.npy`,
+> `image_wrist_hi_NN.png` at `images_wrist_hi/image_wrist_hi_NN.png` (see the obs
+> artifacts row above for the full directory list). `NN` is the zero-padded step
+> index. In practice you rarely hand-build these paths — each primitive tool
+> already returns the resolved `image_cam_hi_path` etc. for the new step.
+
+1. Read `image_cam_hi_NN.png` — agentview RGB **in the calibration frame**
+   (vertical-flip of the raw buffer). This is the image you pick pixels in.
+   `image_NN.png` is the Pi0-rotation frame; **do not pick pixels there**.
+2. Find the target object visually → pixel `(row, col)`.
+3. Read its world xyz directly: `back_project({"row":ROW,"col":COL,"step":NN})`.
+   Sample 3–5 pixels on the object's top surface and median the returned xy
+   (robust to one mis-picked rim/edge pixel). That's the object's surface point
+   in world frame.
+
+### Hi-res perception channel (ON BY DEFAULT, 1024×1024)
+
+The driver dumps, every step, a 1024×1024 pair per camera IN ADDITION to the
+256 files: `images_cam_hi/image_cam_hi_NN.png` + `world_hi/world_hi_NN.npy`
+(agentview) and `images_wrist_hi/image_wrist_hi_NN.png` +
+`world_wrist_hi/world_wrist_hi_NN.npy` (wrist).
+**PREFER the hi pair for looking and identification** — a far object spans 4×
+more pixels, and package text/label art is actually legible (e.g. "Cream
+Cheese" vs "BUTTER" boxes are readable at 1024 and indistinguishable smears
+at 256). If the hi files are absent, everything below works unchanged at 256.
+
+- A hi-res pixel `(row,col)` indexes ONLY the hi-res world map (`back_project`
+  default `resolution:"high"`; float16, same world frame). Never index a 1024
+  pixel into the 256 map or vice versa — pass `resolution:"low"` only for a
+  pixel taken from a 256 image (convert by dividing/multiplying by 4 if needed).
+- The `segment` command automatically uses the hi-res frame when present
+  (its `centroid_pixel`/`box` are then in 1024 coords).
+- Metric accuracy of mask-median localization is the SAME at both resolutions
+  (the residual ~2 cm error is the surface-vs-center offset, not pixel size) —
+  the hi channel is for **identification**, not for replacing the wrist-cam
+  fine-localization protocol.
+- Disk note: hi files keep only the LAST ~5 steps (rolling window); the 256
+  history is complete. If the hi files are absent, everything below works
+  unchanged at 256.
+
+### Two cameras — agentview = IDENTITY, wrist = GEOMETRY
+
+**Roles are NOT symmetric (this is the core discipline, from the 80-task
+localization sweep):**
+- **agentview** (`image_cam_hi_NN.png` + `world_hi/world_hi_NN.npy`, ~1 m away):
+  the **semantic IDENTITY authority** — decides WHICH object/surface satisfies
+  the task language + spatial relation. At 1024 a far object spans enough pixels
+  to read labels/shape. Its metric precision is only ±8–13 cm, but identity is
+  its job, not millimetres.
+- **wrist** (`image_wrist_hi_NN.png` + `world_wrist_hi/world_wrist_hi_NN.npy`,
+  <20 cm → ±1–2 cm): a **GEOMETRY refinement** camera for the SAME candidate
+  agentview already chose. It is near-vertical and **bad at identity** — it
+  cannot read side labels or tell duplicate/similar items apart, and in failed
+  probes it locked onto a look-alike hundreds of pixels away. **NEVER let the
+  wrist freely re-identify a non-basket target.**
+
+Protocol (non-basket objects/surfaces):
+1. **Identity (agentview)** — in `image_cam_hi_NN.png` choose the target by RGB /
+   label / shape / global spatial relation; sample 3–8 pixels on it and median
+   `back_project` → the **identity anchor** (rough xy ok).
+2. **Approach** — `move_to` ~15–20 cm directly above that anchor xy (driver
+   re-renders both cams after every primitive).
+3. **Geometry refine (wrist)** — pick the SAME candidate's pixel in
+   `image_wrist_hi_NN.png`, `back_project` it with `camera:"wrist"`. **Accept
+   this corrected xy ONLY if it is within ~3–5 cm of the agentview anchor**; if
+   it jumps >5 cm, REJECT it (it hit a look-alike/background) and keep the
+   agentview xyz. The wrist may sharpen coordinates but may NOT override the
+   agentview semantic choice. Never average the two.
+- **Basket / cavity special case:** for `basket`/cavity the wrist MAY also
+  confirm/refine the true interior centre (basket failures are rim/edge bias,
+  not semantic confusion).
+
+### Mandatory pre-task perception pass — localize EVERYTHING, THEN act
+
+Before ANY pick/place, build a localization table in your reasoning — one row
+per task-relevant entity (every movable target, every destination/support/
+fixture, every relation landmark named by `task_language`), each with:
+`name_or_role · agentview_evidence (why this candidate) · agentview_pixels ·
+agentview_xyz (median back_project on hi-res) · wrist_refine
+accepted|rejected|basket_confirmed · final_xyz · uncertainty`. Do the
+**FINAL READY CHECK** (every entity has a final xyz; non-basket wrist
+refinements are spatially consistent with agentview; basket points are
+interior-centred) — only then start manipulating. Rationale: in single-attempt
+mode a **wrong-target first grab is unrecoverable** (it tips/displaces both the
+grabbed object and the target zone), so the cheap insurance is to identify all
+entities up front instead of recovering later.
+
+> The underlying math (already done for you): `cam = [(col−cx)·z/fx,
+> (row−cy)·z/fy, z]` with `z=depth[row,col]`, then `P_world =
+> extrinsic_cam2world @ [cam,1]`. You must invert `K` BEFORE the extrinsic — the
+> old `E @ [col·z, row·z, z, 1]` recipe (no `K⁻¹`) is **wrong** (metres off).
+> The `world/` and `world_wrist/` maps bake in the correct `K⁻¹`+extrinsic, and
+> `back_project` reads them for you — that is precisely why `back_project`
+> exists; you never write this math yourself. Forward world→pixel was verified
+> 5/5 vs GT at design time (plate Δ=6 mm). The wrist map may be all-table/null
+> early (the wrist only sees gripper + table until you move it over a target).
 
 ## Before you start: READ THE AUTO-MEMORY
 
-Past sessions have stored ~20 hard-won lessons in
-`resources/libero/memory/`. The index
-file `MEMORY.md` is auto-loaded into your system prompt via CLAUDE.md,
-so the one-line hooks are already visible to you. Before launching a
-driver, **scan those hooks** for entries whose name/description touches
-the cell you're about to attempt (search for the task name, object
-type, perturbation suite, or symptom). Then `Read` the matching
-`.md` file for the full rule and fix-recipe — it likely captures a
-root cause that took 30+ minutes to diagnose, with the working
-strategy written down. See **"Memory files to read"** later in this
-guide for a curated list of high-signal entries.
+Operating wisdom lives in the in-repo memory:
 
-Whenever you discover a non-obvious fix that took more than two
-iterations to find, write a new `feedback_*.md` and add a hook to
-`MEMORY.md` so the next session can skip your debugging cycle.
+```
+resources/libero/memory/MEMORY.md
+```
 
-## Rule 1 — `pi0_end_to_end` is FORBIDDEN
+Scan the ~30 one-line hooks. For perception cells **always** open:
+- `feedback_no_teleport_rule.md` — the deleted primitives.
+- `feedback_redo_cell_timeout_1200.md` — why the cell budget is long here.
+(The grasp is oracle-free too: there is no GT-lift oracle — you judge the grasp
+from gripper width + the wrist cam, see Rule 1 / 1b.)
 
-**Using Pi0 to perform the place is not allowed**, regardless of how hard the
-task looks. The LLM MUST script every motion (`move_to`) and every release
-(`release`). If your scripted placement misses, iterate within LLM scripting
-(better coordinates, multi-stage path, different approach angle) — do NOT
-hand the place back to Pi0.
+For bowl→plate spatial tasks always also read `feedback_bowl_eef_y_offset.md`
+(bowl-eef y-offset 4.5 cm: place at `eef_y = plate_y + 0.045`, not `plate_y`).
 
-Specifically:
-- You may call `pi0_pick` to do the grasp. In perception-isolated runs, do not
-  use object-pose lift oracles; stop and verify the grasp from EEF lift,
-  gripper closure, and available images.
-- You may NOT call `pi0_pick` with high `lift_thresh`/`gripper_closed_thresh`
-  to let Pi0 finish the task after a failed LLM place.
-- You may NOT call `pi0_pick` with the full task instruction expecting Pi0 to
-  also handle the place.
+## Rule 1 — `pi0_pick` is grasp-only (no oracle)
 
-The `pi0_end_to_end` regime that appears in older audit JSONs (e.g. previous
-t9 attempt) is **deprecated**. Existing entries can stay as historical
-records but new attempts must NOT produce that regime. If you cannot solve a
-task without Pi0 doing the place, document it as a strict-regime failure
-(`stopped_at_pick=true` or analogous, with notes on which LLM placement
-strategies you tried) — the failure is more useful than a Pi0-end-to-end
-"success".
+`pi0_end_to_end` is FORBIDDEN. `pi0_pick` is for the grasp only; you script every
+`move_to` and every `release`. Use:
 
-`pi0_doubled` remains permitted **only** when Pi0 is used for a non-pick VLA
-skill that genuinely cannot be scripted in OSC space — knob turn (t2),
-drawer close (t3). In every other case, prefer strict.
+```
+pi0_pick({
+  "prompt": "<carefully chosen prompt>",
+  "max_chunks": 20,
+  "lift_thresh": 0.05,
+  "gripper_closed_thresh": 0.06
+})
+```
+
+`pi0_pick` takes **no object-tracking / oracle argument** — it is grasp-only
+and reads NO GT object pose. Passing a name would do nothing even if you tried.
+You judge "did I grab the target?" yourself (Rule 1b). NEVER let Pi0 finish the
+place — YOU do every `move_to` and the `release`.
+
+## Rule 1b — JUDGE THE GRASP from perception, NOT from a name
+
+After a pick, decide "did I grab the target?" from two coord-free signals:
+
+- **Gripper** (`state.robot0_gripper_qpos` from the latest `states.json`
+  entry): fingers closed but NOT fully shut (~0.01–0.05 gap) ⇒ holding an
+  object; fully closed (~0.0) ⇒ grasped air.
+- **Wrist cam**: after the lift, read `image_wrist_hi_NN.png` — the target
+  should be raised into the gripper and the spot it came from now empty (its
+  surface z jumps up by your lift distance). If needed, `back_project` wrist
+  pixels to confirm the surface z jumped.
+
+`pi0_pick`'s returned `success` (an eef-lift + gripper-closure heuristic, pure
+proprioception) is a HINT, not proof — confirm with the wrist cam before
+carrying. The only authoritative TASK-success signal is
+`state.libero_terminated` (the benchmark predicate), which is name-independent.
 
 ## Rule 4 — NO TELEPORT primitives (physics-only)
 
-**The four teleport primitives are DELETED from the codebase and must never be
-reintroduced, re-added, or simulated:**
-
-- `set_object_pose` — writes an object's free-joint qpos straight to the goal
-- `articulate_to` — writes a door/drawer/knob joint qpos directly
-- `js_move_to` — kinematically warps the arm's 7 joint qpos (`mj_forward`, no controller)
-- `carry_object` — `js_move_to` variant that rewrites a held object's qpos each waypoint
-
-They bypass contact physics and do not demonstrate physical manipulation, so any
-"success" using them is invalid. The driver no longer exposes these actions; issuing
-one returns an `unknown action` error. **Every motion must go through the OSC
-controller (`move_to`, `rotate_wrist`, `rotate_pitch`, `release`, `set_gripper`) or
-through Pi0 (`pi0_pick`).**
-
-`pi0_doubled` — Pi0 driving a non-pick contact skill such as the stove-knob turn or a
-drawer open/close — IS allowed and IS the sanctioned replacement for what
-`articulate_to` used to do (the robot makes real contact and applies real torque). If a
-goal predicate genuinely cannot be satisfied by any physical sequence (e.g. a site past
-the Panda reach, or a drawer whose `is_close` needs qpos>0 that no physical push
-achieves), record an honest `strict_failure` with the predicate decomposition — a
-documented physical failure is worth more than a teleport "success".
-
-## Rule 2 — Current runs are single-episode attempts
-
-Historical multi-episode retry notes are legacy/debug guidance only. In the
-current MCP evaluation run, do not call `reset` or `exit` unless the runner
-explicitly exposes and allows that control. Recover within the current episode
-when possible; otherwise write an honest failure/stuck audit and finish.
-
-Concretely:
-- If a place misses, re-localize from the latest images/state and attempt a
-  physical recovery path if one is still safe.
-- If Pi0 keeps grabbing the wrong object in a cluttered scene, tighten the
-  pre-position and prompt using image evidence instead of restarting the scene.
-- If you discover mid-run that your assumed fixture coordinates are wrong,
-  re-derive placement from the current image/depth/back-project evidence, not
-  from hidden task definitions.
-
-This combines with Rule 1: do not escalate to Pi0 end-to-end just because
-the first episode failed. Iterate within LLM scripting across multiple
-episodes; the only ceiling is "no scripted variant works after honest
-exploration," at which point document the strict failure.
-
-## Rule 5 — Assume EVERY task is physically solvable; do NOT mark failure lightly
-
-**Default working assumption: every task in this benchmark is physically
-solvable with the physics-only primitives.** The LIBERO tasks were created from
-human teleoperation demonstrations on the very same robot and scene, so a
-physical solution provably exists. Treat "this cell is blocked" as a *hypothesis
-to disprove*, never as a conclusion you reach after a couple of failed episodes.
-A `strict_failure` you record is a strong claim ("no physical sequence can satisfy
-this predicate") and it is usually WRONG — it almost always means *your strategy or
-your applied force was insufficient*, not that the task is infeasible.
-
-This is not a pep talk; it is the empirical track record of this project. Multiple
-cells that prior sessions confidently labelled `strict_failure_physical` were later
-solved or shown solvable once someone stopped trusting the label:
-
-- **`libero_10 lan_t3` (drawer close to qpos>0)** was declared blocked ("needs qpos>0,
-  impossible to push past flush"). An offline probe (set the joint qpos and step with
-  zero action) proved qpos>0 is a perfectly **stable** state — the drawer is
-  near-frictionless with no collision seat. The close was never impossible; pi0 just
-  quits at visual-flush and OSC is rank-deficient at the cabinet-front singularity. It
-  is now SOLVED by alternating `pi0_doubled` close with an OSC front-approach push.
-- **`libero_10 swap_t8` (mokas -> relocated stove)** was declared "cook past Panda reach".
-  The cook_region is actually a reachable BOX (the prior session measured the burner
-  *body* xpos, not the predicate *site* box). Reach was never the barrier.
-
-**Before you are allowed to write `strict_failure`, you MUST have done ALL of:**
-
-1. **Verify the feasibility claim itself, with numbers.** Read the actual predicate
-   threshold from the libero source (e.g. `is_close` / `under` / `in_box`), and the
-   actual site/box coordinates and sizes — never trust a coordinate "from the image" or
-   a remembered bound. Many "blocked" verdicts are just a wrong number.
-2. **Run an offline feasibility probe** when a predicate hinges on a joint/object
-   reaching some value: load the env (`OffScreenRenderEnv`), write the target qpos /
-   pose, step with zero action, and check whether the predicate region is physically
-   attainable and *stable*. If the goal state holds, the task is solvable — keep going.
-3. **Exhaust the current-episode strategy ladder**, not just parameter tweaks:
-   different force path (push vs lift vs momentum-tap on a low-friction joint),
-   different approach pose to dodge a singularity, `pi0_doubled` vs scripted OSC
-   and *combinations* of them (pi0 reaches joint configs OSC cannot; OSC is
-   precise where pi0 is blind), and re-order the subtasks. External relaunches
-   are runner/infra crash recovery or evaluation scheduling behavior, not an
-   agent-issued `reset`.
-4. **Render the failed steps** (Rule 0) and write the diagnosis in words.
-
-Only after all four, and only if you can name the *specific physical reason* (e.g.
-"object geometrically too large for the closed cavity", verified) may you record a
-failure — and even then, frame it as "not achieved within these limits", note exactly
-what you tried, and leave the door open for the next session. A documented honest dead
-end is fine; a lazy `strict_failure` after two tries is a bug.
-
-Read [WORK_DONE.md](./WORK_DONE.md) first if you want the full context. This
-file is the operating manual.
+`set_object_pose`, `articulate_to`, `js_move_to`, `carry_object` are **deleted
+from the codebase**. They are not callable and are not in the tool list. If a
+goal is past OSC reach and no physical approach works, write an honest
+`libero_terminated:false` audit — never warp.
 
 ## Rule 0 — Use images for reasoning, not just JSON state
 
-The driver dumps **both** `states.json` (privileged numerical state — one
-entry appended per step) and `images/image_NN.png` (agentview render) at
-every step. The single biggest failure mode of the previous session was
-**only reading the JSON**: I had every image on disk but never called
-`Read` on a PNG, so I never used the LLM's spatial reasoning ability.
-I became a control-parameter tuner instead of a spatial reasoner — and
-tuned controllers cannot rescue a bad target layout.
+After every primitive tool call, inspect the returned state and image paths
+(the tool returns them — no separate read needed). Read the new
+`image_cam_hi_NN.png` path (calibration frame — the one you pick pixels in)
+and, when close to a target, the `image_wrist_hi_NN.png` path. Even more
+important here than in oracle mode: this is *the* signal you use to find
+objects.
 
-**Mandatory practice:**
+`image_cam_hi_NN.png` (and its 256 counterpart `image_cam_NN.png`) is the
+calibration-frame RGB — same scene as `image_NN.png` but vertically flipped so
+that pixel coordinates align with the camera matrices in `camera_meta.json`.
+Pick object pixels from these; `states.json` alone gives only proprioception +
+object names.
 
-1. **Before any non-trivial decision, `Read` the latest `images/image_NN.png`.**
-   Especially: before the first `move_to` of a placement, after every
-   failure, and any time you're about to retry the same plan with tweaked
-   numbers. JSON tells you where objects are; the image tells you what
-   *space remains* and *what could fit there*.
+## Rule 2 — SINGLE EPISODE, NO RESET
 
-2. **Describe the scene in words first, decide second.** Write 1–2
-   sentences: "cook_region center occupied by moka_2; ~6 cm of clear floor
-   in the front-right and back-left of the 15×15 cm site." Then decide.
-   Numbers are sanity checks for the plan, not the source of it.
+This is a **one-shot** evaluation: you get **exactly ONE episode**. Do NOT reset
+and do NOT restart the episode. You MAY recover *within* this one episode
+(re-localize — objects may have moved; re-pre-position; re-`pi0_pick` a missed
+grasp; walk the next rung of the Pi0 prompt ladder in Rule 3; re-firm the grip;
+`rotate_pitch`/`move_pose`) — that is all one continuous attempt. But the
+instant you would want to start over, **STOP instead and write the audit**
+(success or an honest `libero_terminated:false`), then call `finish`. Never
+warp; never reset.
 
-3. **If you've tuned controller params (`step_clip`, `max_steps`, drop
-   height) twice in a row without success, STOP.** This is the signature
-   of being trapped at the wrong abstraction level. Open the latest image,
-   redescribe the scene, and ask whether the *target layout itself* is
-   feasible. Multi-object placements into a flat region almost always
-   need a footprint allocation step (e.g. opposite corners) — single-point
-   targeting is the default trap.
+## Rule 5 — Assume every task is physically solvable
 
-The t8 failure that took 4 attempts to fix would have been solved on attempt
-2 by a single image inspection: "first moka sits at the center of a 15 cm
-square — where else can a 6 cm cylinder go?" Two minutes of vision-language
-reasoning, not two hours of step_clip tuning.
+Same as oracle mode. A localization that "looks right" but moves the gripper
+into thin air usually means your pixel was on a wrong surface (e.g. picked the
+bowl's reflection on the table). Re-look at `image_cam_hi_NN.png`, pick a
+different pixel firmly on the target's top, re-`back_project`. Don't conclude
+"unreachable" until you've validated localization.
 
-### Failure forensics — when a retry fails, render the failed steps
+## Rule 6 — Your task is `task_language`; the BDDL is FORBIDDEN
 
-After two retries on the same plan, *stop tuning parameters and start
-rendering*. The image is your debugger. Walk the failed run step by
-step, `Read` the `images/image_NN.png` at each critical milestone, and
-look for the disagreement between what you expected and what's on screen.
+Each `states.json[NN]` entry carries a **`task_language`** field — the
+authoritative task instruction (the BDDL's `:language` tag, which contains
+**no** coordinates). **Read it and obey it verbatim.** Do not infer the task
+from object names, from sibling recipes, or by guessing a `task_map` index —
+that produced *wrong-task* runs (an agent solving a task it was never assigned).
 
-**Render this set after any failed (suite, task, seed) attempt:**
+> ⚠️ **Never read the BDDL files, import the benchmark, or query env object
+> poses.** The BDDL is the one place the task language *and* the `:init`
+> ground-truth coordinates live together — reading it to get the language also
+> leaks the coordinates this mode exists to withhold (a perception-isolation
+> breach; observed on several swap cells in earlier runs). You already have the
+> task from `task_language`; you get object **positions** ONLY by depth
+> back-projection. The runtime strips coords from `state` but does **not**
+> sandbox the BDDL — that discipline is on you.
 
-1. `images/image_00.png` — initial scene (verify object positions match
-   `states.json[0]`; spot any unexpected fixture / distractor / configuration
-   that is not obvious from the current task text).
-2. The image right after each `pi0_pick` — confirm the object is
-   actually held (gripper around object, object lifted) vs hanging
-   off a finger or still on the table. JSON's `chunks_used` can lie
-   when Pi0 ran out of chunks mid-motion.
-3. The image right before every `release` — confirm the object is
-   above the target xy zone, not 5 cm off due to a stalled `move_to`.
-   This catches "release dropped the object on the basket rim, not
-   in it" failures *before* you waste a `release`.
-4. The image right after every `release` — confirm the object landed
-   where physics predicted, not bounced / rolled / tipped.
-5. For articulation / contact tasks: image immediately before AND after each
-   push or close. A physical-contact failure (the door swing sweeping the object
-   out of the cavity, a drawer that didn't move because contact was lost) leaves
-   visually-obvious evidence that JSON only hints at via a z drop.
+## Rule 7 — Ground the target by its spatial RELATION, not its name
 
-**Write the diagnosis in words.** For each image, one sentence on
-what you see and one sentence on what you expected. The mismatch is
-where the bug is. Do this *before* writing the next command.
+When the task names a relation ("the bowl **ON THE COOKIES BOX**", "the mug
+**LEFT OF** the plate"), the target is whichever object SATISFIES that relation
+in the scene — find it by perception. Identical objects (`akita_black_bowl_1` vs
+`_2`) carry NO perceptual difference in their names, so the name can't choose
+for you; the RELATION disambiguates:
 
-Example from libero_10 t3 drawer diagnosis (2026-05-21):
+- "on the cookies box" ⇒ the bowl that is **elevated** (~0.03–0.06 m above the
+  table, on the box) — distinguish it by its higher world-z from `back_project`
+  vs the table-level bowl.
+- "left/right/front/back of X" ⇒ compare back-projected world xy to X's xy.
 
-- *Expected after the close*: drawer closed with the bowl inside,
-  `libero_terminated=True`.
-- *Image showed*: drawer slid shut but the bowl left behind on the table
-  at the old open-drawer xy.
-- *Conclusion*: the close moved the drawer floor without carrying the bowl —
-  the fix is a CONTINUOUS push (drawer front wall in contact drags the bowl
-  along), never a one-shot motion that loses contact.
-
-That single image inspection turned 3 session-hours of "try a
-different drop xy, try a slower carry" into a
-10-minute fix. **Whenever a retry of a *strategy* (not just numbers)
-fails twice, render. The image will tell you whether the failure is
-in your plan or in the physics simulator's behavior.**
+Pick the target purely from where things ARE. (You never need to know which
+`_N` name the target is — no primitive in this mode asks for one.)
 
 ## Mental model
 
-1. **The runner owns the environment server.** It loaded Pi0.5, built a
-   single-env LIBERO sim, and exposes structured MCP tools.
-2. **You call tools.** Each tool call runs one primitive, appends a step entry
-   to `states.json` (state + command + result), and writes the matching image
-   artifacts.
-3. **You read state/images, decide the next move, call the next MCP tool.
-   Repeat.**
-
-Each (task, seed) run is a single current episode. Historical notes about
-fresh episodes are not current run instructions.
+1. **The runner (`cli/main.py`) owns a long-lived env server** — Pi0.5 + a
+   single-env LIBERO sim. It launches and manages the server; you do NOT start,
+   stop, or restart it.
+2. **You call one structured MCP tool per step.** The tool BLOCKS until the
+   driver runs that one primitive and dumps the new step, then RETURNS the new
+   state + log + image paths. There is no file bus and no polling — the tool's
+   return value IS your signal. Each dumped step appends an entry to
+   `states.json` (entry `[NN]`) and writes `images/image_NN.png` +
+   `images_cam/image_cam_NN.png` + `depths/depth_NN.npy` + `world/world_NN.npy`
+   (+ the wrist and hi-res dirs) and, once, top-level `camera_meta.json`.
+3. **You read the returned state, localize via `back_project`, decide the next
+   move, and call the next tool.**
 
 ## Launch a session
 
-The current MCP runner launches and manages the environment. Do not manually
-start, stop, kill, or background `env_server.py` from inside an agent run.
+The runner (`cli/main.py`) launches and owns the env server (Pi0.5 + single-env
+sim) — do not start/stop it. You call MCP tools; begin by reading step 0 via
+`view_driver_state({"step":0})`.
 
-> libero_10 recipes are long-horizon (mean ~940, up to ~1600 env-steps);
-> 600 hits robosuite's per-episode cap mid-recipe and raises
-> `ValueError("executing action in terminated episode")`. Use 5000.
-> (spatial/object stay at 600 — short single pick->place.)
-> See `feedback_max_episode_steps_libero.md` + `results_10_pert/PATCH_NOTES.md`.
+## The perception artifacts you read each step
+
+| artifact | what's in it |
+|---|---|
+| `states.json` (entry `[NN]`) | `step_idx`, `libero_terminated`, **`task_language` (your authoritative task instruction — the BDDL `:language` tag, coord-free; obey it verbatim)**, `state.{robot0_eef_pos, robot0_eef_quat, robot0_gripper_qpos, object_names}`, and the merged `command`/`result`/`elapsed_s` for that step. **No object coordinates.** Read via `view_driver_state({"step": NN})` (omit `step` = latest). |
+| `images/image_NN.png` | RGB in Pi0 frame (180° rotated). *Do not pick pixels here for back-projection.* |
+| `images_cam/image_cam_NN.png` | agentview RGB in **calibration frame** (vertical flip). Pick object pixels HERE (256 grid → `back_project` with `resolution:"low"`). |
+| `images_cam_hi/image_cam_hi_NN.png` | **HI-RES 1024×1024** agentview RGB, calibration frame. **PREFER this for looking / identification**; `back_project` its pixels at the default `resolution:"high"`. |
+| `depths/depth_NN.npy` | `(256, 256) float32` agentview metric depth (m), calibration frame. Same row/col as `image_cam_NN.png`. |
+| `world/world_NN.npy` | `(256, 256, 3) float32` — **precomputed agentview world xyz per pixel** (K⁻¹+extrinsic done). Prefer `back_project`; read this manually only for debugging. Fixed cam (~1 m). |
+| `world_hi/world_hi_NN.npy` | `(1024, 1024, 3) float16` — precomputed agentview world xyz per hi-res pixel. |
+| `images_wrist/image_wrist_NN.png` (+ `images_wrist_hi/`) | **wrist (eye-in-hand) RGB**, calibration frame. Moves with the gripper. |
+| `depths_wrist/depth_wrist_NN.npy` | wrist metric depth (m). |
+| `world_wrist/world_wrist_NN.npy` (+ `world_wrist_hi/`) | `(256, 256, 3)` / `(1024, 1024, 3)` **precomputed wrist world xyz per pixel**, SAME world frame as agentview. ±1–2 cm when <20 cm to target. May be all-table/null until you move over the target. |
+| `wrist_meta/wrist_meta_NN.json` | wrist intrinsics + extrinsic **for THAT step only** (the wrist cam moves). Read via `view_camera_meta({"camera":"wrist","step":NN})`. |
+| `camera_meta.json` (top-level) | agentview `intrinsic_K` (3×3), `extrinsic_cam2world` (4×4), `depth_near/far`, projection recipe. Read via `view_camera_meta({"camera":"agentview"})`. |
+| `segment_NN_XX.json` | (only after a `segment` call) `{prompt, camera, source_step, score, box, centroid_pixel, world_xyz, n_pixels}` — SAM3 mask back-projected via the matching world map. `world_xyz` is a robust MEDIAN over the whole mask. On failure carries `{error, fallback}`. `XX` is a per-step index. |
+| `segment_overlay_NN_XX.png` | (only after a `segment` call) the segmented mask tinted red on the source image — read it to confirm SAM3 grabbed the right object. |
+
+The command + its result + `elapsed_s` are merged INTO the `states.json[NN]`
+entry (and echoed in each primitive tool's return value) — there is no separate
+per-step log file to read.
+
+## Localization with `back_project` (coarse agentview → fine wrist)
+
+You index the precomputed map through `back_project` — no K⁻¹ math. Coarse
+(agentview) then, once the gripper is parked over the target, fine (wrist):
+
+```
+# COARSE: agentview hi-res (default resolution:"high") — choose which object / rough xy
+back_project({"row": ROW, "col": COL, "step": NN})
+
+# FINE: wrist — after move_to ~15-20cm above the target, pick its pixel in
+# image_wrist_hi_NN.png and back_project it (±1-2cm; refines the SAME candidate).
+back_project({"row": ROW, "col": COL, "step": NN, "camera": "wrist"})
+```
+
+(Pass `"resolution":"low"` only when `ROW,COL` came from a 256 image.)
+
+Tips:
+
+- Sample 3–5 pixels on the object (centre + a couple of edge pixels) and
+  median the back-projected xy — robust to a single mis-picked pixel. Avoid
+  pixels on the thin rim/edge or the gap to the table (those index a
+  background/edge depth and give a world point metres away).
+- The returned point is the **visible surface** under your chosen pixel.
+  For a flat object (plate, basket) that surface ≈ the place target. For a
+  bowl/bottle, the surface is the top of the object; the rim's xy is what
+  you want for `release`, not the grasp's eef_y (apply
+  `feedback_bowl_eef_y_offset` — bowl `eef_y_target = perceived_plate_y + 0.045`).
+- For the **table z** (when you need a known floor to compare against),
+  `back_project` a pixel on bare table near the object.
 
 ## The command vocabulary
 
-Call structured MCP tools. Brief examples below; the full **Extended
-primitives reference** section (later in this guide) explains when to use each,
-gotchas, failure trees, and worked examples.
+Call one structured tool per step. The full primitive set (only the *control
+signals* are listed here) — every one blocks until the step is dumped and
+returns the new state + log + image paths:
 
 ```jsonc
-// === core (always available) =====================================
+// === physics-only primitives (the entire allowed set) =====================
 
 // Scripted EEF servo. action_scale=0.05 is the env's units; step_clip caps
-// per-step Δxyz in metres BEFORE division by action_scale -> smaller = slower.
-move_to({"xyz": [x, y, z], "gripper": -1|+1,
-         "tol": 0.012, "step_clip": 0.02, "max_steps": 80,
-         "action_scale": 0.05, "target_yaw": null})
+// per-step Δxyz (m) BEFORE division by action_scale — smaller = slower.
+move_to({"xyz": [x, y, z], "gripper": -1,
+         "tol": 0.012, "step_clip": 0.025, "max_steps": 80,
+         "action_scale": 0.05, "target_yaw": null})   // gripper: -1 open, +1 close
 
-// Pi0.5 closed-loop pick. Verify the grasp from EEF lift, gripper closure,
-// and available images.
-pi0_pick({"prompt": "pick up the X", "max_chunks": 30,
+// Pi0.5 closed-loop pick. Grasp-only — no oracle/tracking arg (Rule 1).
+// You judge the grasp from gripper width + wrist cam (Rule 1b).
+pi0_pick({"prompt": "pick up the X", "max_chunks": 20,
           "lift_thresh": 0.05, "gripper_closed_thresh": 0.06})
 
-// Hold pose, open gripper. Triggers libero termination if "On" predicate met.
-release({"max_steps": 25})
+// Pi0.5 for a contact skill (knob turn, drawer/door open-close — rare here).
+// success mirrors libero_terminated only; inspect image/state for intermediates.
+pi0_doubled({"prompt": "turn off the stove", "max_chunks": 20})
 
-// Hold pose, command gripper for N env steps without moving.
-set_gripper({"gripper": +1|-1, "steps": 5})
+// Open gripper to place. Triggers libero termination if the On/In predicate met.
+release({"max_steps": 20})
 
-// === extended (added 2026-05-19, Rule-1 compliant LLM-side motion) ====
+// Hold pose + drive gripper. Use to firm a grip mid-carry.
+set_gripper({"gripper": 1, "steps": 5})   // -1 open, +1 close
 
-// World-z yaw rotation, holds xyz. (Bug-fixed: used to rotate in the
-// OPPOSITE direction for gripper-down configs.)
-{"action": "rotate_wrist",
- "delta_yaw": 1.57,                           // OR "target_yaw": <abs>
- "gripper": +1|-1,
- "max_steps": 60, "tol": 0.05, "step_clip": 0.15}
+// Wrist yaw (world-z). Provide target_yaw (absolute) OR delta_yaw (relative).
+rotate_wrist({"target_yaw": 0.0, "gripper": 1,
+              "max_steps": 40, "tol": 0.02, "step_clip": 0.10})
 
-// World-x pitch rotation, holds xyz / yaw / gripper.
-// Lets the gripper "lean forward" to fit through tight cavity openings
-// (e.g. t9 microwave) that 4-DoF xyz+yaw OSC can't thread.
-{"action": "rotate_pitch",
- "delta_pitch": 0.9,                          // OR "target_pitch": <abs>
- "gripper": +1|-1,
- "max_steps": 60, "tol": 0.03, "step_clip": 0.15}
+// Tilt eef pitch (axis-angle X). Cavity entry / micro-aiming. target_pitch OR
+// delta_pitch. Use before threading a narrow opening whose face normal is ±y.
+rotate_pitch({"target_pitch": 0.9, "gripper": 1,
+              "max_steps": 40, "tol": 0.02, "step_clip": 0.10})
 
-// (NO teleport commands. js_move_to / articulate_to / set_object_pose are
-//  REMOVED — every motion goes through the OSC controller or Pi0. For
-//  Close(articulation) / TurnOn, push physically with move_to or hand the
-//  contact skill to pi0_pick (pi0_doubled). See "Rule 4 — NO TELEPORT".)
+// Co-vary xyz + pitch + yaw — threads cabinet-front IK singularity that move_to
+// walls at. gripper defaults to -1 (OPEN) — pass gripper:1 while holding.
+move_pose({"xyz": [x, y, z], "target_pitch": 0.0, "target_yaw": 0.0,
+           "gripper": 1, "step_clip": 0.02, "pitch_step": 0.08, "yaw_step": 0.08,
+           "tol": 0.012, "ori_tol": 0.05, "max_steps": 150})
+
+// (OPTIONAL) SAM3-grounded localization — does NOT move the robot and does NOT
+// replace manual back-projection. Segments the most-recent dumped image for the
+// prompt, back-projects the mask through the matching world map, and writes
+// segment_NN_XX.json {score, box, centroid_pixel, world_xyz (robust MEDIAN over
+// the whole mask), n_pixels} + segment_overlay_NN_XX.png. Read world_xyz
+// directly instead of eyeballing a pixel. camera "wrist" uses the wrist world
+// map for fine refinement (move the eef over the target first). Pass
+// "point":[row,col] for a point prompt instead of text. min_score default 0.2.
+// Needs a configured SAM3 service; if it is down or finds nothing the result is
+// an {"error":...,"fallback":...} dict — fall back to picking a pixel in
+// image_cam_hi_NN.png and calling back_project.
+segment({"prompt": "the black bowl on the stove", "camera": "agentview",
+         "point": null, "min_score": 0.2})
+
+// === FORBIDDEN — DELETED FROM THE CODE — DO NOT EMIT ============
+//   set_object_pose, articulate_to, js_move_to, carry_object
 ```
 
-After each command, wait for the next entry to appear in states.json:
-
-```bash
-N=<step_number>  # zero-indexed; first command after step 0 is N=1
-until python -c "import json,sys; sys.exit(0 if len(json.load(open('$OUTPUT_DIR/states.json')))>$N else 1)" 2>/dev/null; do sleep 1; done
-```
-
-## The strict-hybrid recipe
-
-Per (task, seed):
-
-```
-1. Inspect states.json[0] for robot proprioception, object_names, and termination
-   status. Do not expect object world coordinates in perception-isolated runs.
-   Localize target objects via images_cam + depth/back_project, segment, and
-   wrist/high-res artifacts when available.
-2. (Optional) pre-position above target object with gripper open.
-3. pi0_pick with a short object-specific prompt and modest `max_chunks`.
-   Verify from EEF lift, gripper closure, and images before moving.
-4. Read post-pick state. Compute bowl-eef offset.
-5. move_to(plate_xy - offset_xy, plate_z + half + margin - offset_z) keeping
-   gripper closed. Often needs 2-3 sub-stages: lift -> travel -> descend.
-6. release(max_steps=25). Watch for libero_terminated=True in state JSON.
-7. **Always add a retreat step** — move_to a safe pose with gripper open,
-   step_clip=0.02. See "Predicate fire timing" below.
-```
-
-Multi-object tasks chain steps 2–6 per object. Pi0 is re-invoked for each
-pick; you handle every place.
-
-### Predicate fire timing & mandatory retreat
-
-`libero_terminated=True` can fire at **any env.step**, not only during the
-`release` primitive. The libero predicate (`On`, `In`, `Close`, …) is
-re-evaluated every physics step the env runs, so the trigger step depends on
-*when the object physically lands in the predicate region*, which is not
-always the moment you open the gripper.
-
-Empirically observed fire points (libero_goal swap session, 2026-05-22):
-
-| Task | Fires during | Why |
-|---|---|---|
-| t1 swap (bowl->cook) | **retreat** | OSC stalled at z=1.20, bowl perched on gripper at z=1.17; only after retreat (gripper opens and moves away) did bowl fall the last 17 cm onto cook_region. |
-| t9 swap (wine->rack) | **descent** | The descent `move_to` itself put the bottle in contact with rack at z=1.15 -> `On` satisfied mid-descent, before any release primitive ran. |
-| t2/t4 swap (->cabinet) | **release** | Standard case — release opens gripper, object drops a few cm onto cabinet top, predicate satisfied within `release`'s settle steps. |
-
-Two operational consequences:
-
-1. **Always include a retreat `move_to` after `release`** even when
-   `libero_terminated=False` at the release step. Retreat clears the gripper
-   away from the placement so the object can fully settle, and lets you
-   capture the *true* final state — both for predicate firing and for
-   recording final image/state evidence in the audit JSON. Skipping retreat
-   risks (a) missing the predicate that would have fired and (b) saving an
-   `final_state` where the object is still half-supported by the gripper.
-
-2. **Don't gate "success" on release's `libero_terminated`.** Check the
-   *latest* state file after retreat, not the release log. If your audit
-   stitch only inspects `release_result["libero_terminated"]`, you will
-   under-count strict passes for any task where settle takes longer than
-   release's `max_steps` (e.g. tall objects, cavity placements, OSC-stalled
-   descents where the object falls from height after release).
-
-## Extended primitives reference
-
-Four additions / fixes (2026-05-19) cover tasks the basic recipe can't:
-narrow cavity openings, OSC-singularity workspace boundaries, and
-`Close(articulation)` goal predicates. All four are pure LLM-side motion
-primitives — Rule 1 compliant; they do not invoke Pi0.
-
-| Primitive | Purpose | Run cost | Implementation |
-|---|---|---|---|
-| `rotate_wrist` (bug-fixed) | world-z yaw rotation, holds xyz | ~10–30 env steps | OSC action[5] |
-| `rotate_pitch` | world-x pitch rotation, holds xyz/yaw | ~10–30 env steps | OSC action[3] |
-
-(`js_move_to`, `articulate_to`, `set_object_pose`, `carry_object` were removed — see
-**Rule 4 — NO TELEPORT**. Only the two OSC reorient primitives above remain in this
-"extended" set; everything else is core OSC + `pi0_pick`.)
-
-### 1. `rotate_wrist` — world-z yaw rotation (bug-fix)
-
-**What it does.** Drives the gripper's world-frame yaw to `target_yaw`
-(absolute) or by `delta_yaw` (relative). Holds xyz constant. Uses OSC
-`action[5]` (axis-angle z).
-
-**Bug fix (2026-05-19).** Earlier versions extracted yaw via
-`scipy.Rotation.as_euler('zyx')[0]`, which returns the **negative** of the
-world yaw for gripper-down configs (`R[2,2] ≈ -1`). The function rotated
-the wrist in the OPPOSITE direction of the commanded yaw. Replaced with
-`atan2(R[1,0], R[0,0])` (rotation matrix first column). Also fixed the
-same buggy extraction in `move_to(target_yaw=...)`.
-
-**Returns:** `{name, start_yaw, target_yaw, final_yaw, final_err,
-steps_used, libero_terminated}`. Pass if `|final_err| < 0.05`.
-
-**Conventions.** `yaw = atan2(R[1,0], R[0,0])`. At gripper-down rest:
-yaw = 0. `+yaw` rotates the gripper x-axis from world +x toward world +y.
-
-**When to use.**
-- Pre-orienting the gripper before threading into narrow openings whose
-  geometry depends on wrist alignment (e.g. libero_10 t9 microwave cavity).
-- Twisting the gripper after release to unhook a held object's handle
-  from a finger before retreat. **Empirical t9 finding:** `delta_yaw = +3.0`
-  after release of a mug also (a) unhooks the handle, (b) retreats the eef
-  ~12 cm in -y, AND (c) nudges the held object an extra ~4 cm in +y. Useful
-  as a "release + retreat + push deeper" three-in-one combo for cavity
-  placements.
-
-### 2. `rotate_pitch` — world-x pitch rotation (NEW)
-
-**What it does.** Tilts the gripper around the world X-axis, so the
-gripper z-axis swings in the world yz-plane. Drives via OSC `action[3]`
-(axis-angle x). Holds xyz, yaw, and gripper constant.
-
-**Why it exists.** OSC `move_to` only exposes xyz + yaw (4-DoF in pose
-space). Some tasks — notably t9 microwave cavity entry — need the gripper
-to "lean forward" so the wrist body (~3 cm above the eef site) fits
-through a tight opening. Without pitch tilt, the wrist body hits the
-cavity ceiling at z=1.088. With `delta_pitch ≈ +0.9` (52°), it threads
-the opening and mug placement succeeds.
-
-**Returns:** `{name, start_pitch, target_pitch, final_pitch, final_err,
-steps_used, libero_terminated}`. Pass if `|final_err| < 0.05`.
-
-**Conventions.** `pitch = atan2(R[1,2], -R[2,2])`. At gripper-down rest:
-pitch = 0 (gripper z-axis points world -z). `+pitch = +π/2`: gripper z
-points world +y (gripper "looking forward"). `-pitch = -π/2`: gripper z
-points world -y. Sign verified empirically: `action[3]=+1.0` tilts eef z
-toward world +y.
-
-**When to use.**
-- **t9 mug -> microwave**: `rotate_pitch +0.9` lets the gripper thread the
-  cavity opening (mandatory for the In predicate).
-- Pouring-like motions where the eef needs to tilt forward.
-- Any cavity / shelf insertion task where 4-DoF (xyz + yaw) OSC can't fit
-  the wrist body geometry.
-
-### 3. (REMOVED) js_move_to / articulate_to / set_object_pose — NO TELEPORT
-
-These four primitives — `js_move_to` (kinematic arm-qpos warp), `carry_object`
-(object-qpos warp riding the arm), `articulate_to` (door/drawer/knob joint-qpos
-write), and `set_object_pose` (object free-joint qpos write) — have been **deleted
-from the codebase** (2026-05-26). They bypass contact physics and do not demonstrate
-physical manipulation. See **Rule 4 — NO TELEPORT**. Do not reintroduce or simulate
-them. The only motion primitives are the OSC ones (`move_to`, `rotate_wrist`,
-`rotate_pitch`, `release`, `set_gripper`) and `pi0_pick`.
-
-**Physics-only replacements for what teleport used to do:**
-
-- **Stove TurnOn / TurnOff** (`flat_stove_1_button`, On at qpos≥0.5, Off at qpos<0):
-  turn the knob physically with `pi0_doubled({"prompt": "turn on the stove",
-  "max_chunks": 15})`; this is a non-pick contact skill. The burner glows red
-  when on.
-
-- **Moka / object pick**: scripted grasp works for clear-geometry bodies (descend to
-  the body, `set_gripper +1` steps≈22, lift), but the moka body grip is laterally
-  WEAK — carry it in ~0.08 m hops at `step_clip≈0.01` with a `set_gripper +1` re-clamp
-  after each hop. Long fast traverses slip. Use `pi0_pick` for flat/small objects.
-
-- **Drawer open**: use `pi0_doubled({"prompt": "open the bottom drawer",
-  "max_chunks": 15})`; this is a non-pick contact skill. Pi0 pulls it open
-  (often grabs the handle and the nearby object in one go).
-
-- **Close(slide-drawer) with object inside**: the object must be dragged by CONTINUOUS
-  contact (a teleport leaves it behind). Push the drawer front continuously — either
-  `pi0_doubled` "close the drawer" (repeat; it pushes the front and the object rides
-  the floor) or a CAPPED OSC push (`move_to` +slide-direction, `max_steps≤120` to dodge
-  the QACC-DOF9 NaN). ⚠ Do NOT scripted-descend the eef to low z right at the cabinet
-  front — that collision can crash the MuJoCo worker (EOFError). Note: WhiteCabinet
-  `is_close` needs qpos>0 (pushed past flush), which is genuinely hard physically; if no
-  physical push achieves it, record an honest strict_failure (In satisfied / Close blocked).
-
-- **Close(hinge-door)** (e.g. microwave): push the door physically with `pi0_doubled`
-  "close the door", or reorient (rotate_pitch/rotate_wrist) and OSC-push from a
-  non-singular pose. If unreachable, record a strict_failure.
-
-- **Predicate site past Panda reach**: there is no teleport shortcut. Get the eef as far
-  as OSC allows and release if the object's xy is over the predicate region; otherwise
-  record a strict_failure. Do NOT warp the object there.
-
-### Operational notes for all extended primitives
-
-- **EGL crash budget.** The libero env worker EGL context crashes after
-  roughly 9–12 cumulative commands per driver instance, with long
-  `move_to` commands (max_steps >= 300) being the heaviest. A long push
-  is cheap (warp + few settle_steps), so it doesn't eat the budget the
-  way long OSC moves do. Still: restart the driver between (task, seed)
-  iterations and keep total commands per attempt <10 when possible.
-- **Legacy/debug reset caveat.** Multiple historical `{"action": "reset"}`
-  calls within a single driver session leave the Panda in
-  joint configs where subsequent `move_to` pre-positions don't converge
-  (eef stops ~5 cm short of target). Restart the driver fresh per
-  iteration.
-- **Rule 1 compliance.** None of these primitives invoke Pi0. They are
-  all permitted in strict-regime runs. The `pi0_doubled` regime still
-  exists for cases where a non-pick VLA skill (e.g. knob turn in t2,
-  drawer close in t3) is the sanctioned route now that teleport is gone:
-  use `pi0_doubled` (Pi0 pushes the knob/drawer with real contact).
-- **Rule 2 (single-episode current run).** If an OSC `move_to` stalls on a
-  target you believe is reachable, inspect images and `ik_diagnostics`, adjust
-  the current physical plan, or write a stuck/failure audit if recovery is no
-  longer safe.
-
-## Reading state / log files
-
-```bash
-python - <<'PY'
-import json, sys
-NN = 5  # step index
-states = json.load(open("$OUTPUT_DIR/states.json"))
-d = states[NN]
-s = d['state']
-print('libero_term:', d['libero_terminated'])
-print('eef:', s['robot0_eef_pos'])
-print('grip:', s['robot0_gripper_qpos'])
-print('object_names:', s.get('object_names', []))
-PY
-```
-
-For visual sanity checks, use the Read tool on
-`$OUTPUT_DIR/images/image_<NN>.png` (Claude Code's Read tool renders PNGs).
-For pixel localization or back_project, use `images_cam/image_cam_<NN>.png`
-with the matching depth/back-project artifacts, or use segment/wrist/high-res
-artifacts when available.
-
-## Hyperparameters that actually matter
-
-| Knob | When to use small | When to use large | Reason |
-|---|---|---|---|
-| `pi0_pick.max_chunks` | 8–20 — stop soon after a likely grasp | 20–30 — give Pi0 more time to secure the grasp | Smaller budgets reduce unwanted travel after grasp; larger budgets help hard objects but require image/gripper verification. |
-| `move_to.step_clip` | 0.015–0.02 — cylindrical/heavy objects (cans, moka pots) on libero_10 | 0.04 — bowls, empty gripper | Smaller = slower = less mid-translation slippage. |
-| `move_to.tol` | 0.008 — precise pickup re-alignment | 0.02 — general transit | Tight tol can stall on OSC limits; loose tol can miss target. |
-
-## Rule 3 — LLM is a delivery service for Pi0, not a replacement
-
-Pi0.5 is a vision-action model whose **single best skill is grasping
-objects it can see in front of it from a stable pose.** The hybrid
-pipeline gains its leverage by letting Pi0 do that one thing well and
-having the LLM handle everything else — *not* by replacing Pi0's grasp
-with LLM-scripted descend+close+lift the moment Pi0 stumbles.
-
-Concretely, the LLM/Pi0 split for any pick is:
-
-- **LLM**: use the current task text, state, and images to identify the target,
-  localize it from image/depth, drive `move_to` to a pre-pos that places the
-  gripper directly above the object at a stable z, hand Pi0 the right prompt,
-  *let go*.
-- **Pi0**: from that pre-pos + prompt, run the closed-loop grasp.
-
-The Appendix at the end of this guide ("LLM-scripted pick fallback") is
-a real escape hatch but should be the **last** thing you reach for. In
-practice the failure mode is: `pi0_pick` returns 15 chunks of nothing,
-the LLM panics, writes `move_to z=mug_top + set_gripper +1`. That is
-premature unless you have first exhausted the escalation ladder below.
-
-### The Pi0 prompt escalation ladder (try in order)
-
-Only after **all four** fail within the current episode, or across
-runner-assigned attempts if the runner explicitly allows them, should you write
-an LLM-scripted pick.
-
-1. **Sub-instruction** `"pick up the {object}"`. Works on `libero_spatial`
-   (visually unambiguous) and any clean single-target scene.
-2. **Current task text** from the prompt/runtime (or `task_language` when the
-   runtime exposes it). Do not read BDDL files. This is useful for
-   `libero_10` cluttered scenes (multiple distractors) and tasks Pi0
-   was trained on as a *multi-step* instruction — drawer open+place,
-   stove on+place, microwave in+close, etc. Use short `max_chunks` and verify
-   the grasp from gripper/image signals so Pi0 does not continue into place.
-3. **Spatial qualifier** `"pick up the X on the cabinet"` /
-   `"...next to the basket"`. Use for elevated objects (cabinet top,
-   stove, microwave shelf) and edge-of-workspace positions.
-4. **Reposition + retry**: if Pi0 wanders or stalls, the gripper is
-   often approaching from a bad angle. Adjust the *pre-pos*, not the
-   grasp:
-   - Lower pre-pos z (drop from z=0.95 to z=0.65 — tight spatial
-     constraint forces Pi0 toward the nearest object).
-   - Different approach xy (offset by 5 cm toward the handle side for
-     mugs; offset toward the body center for boxes).
-   - If the scene has drifted from prior attempts, re-localize from the latest
-     image evidence and recover physically if safe; otherwise write a
-     stuck/failure audit.
-
-If you reach LLM-scripted pick, document in `strategy_notes` which
-prompts and pre-poses you tried first. A "tried only sub-instr once,
-then scripted" note is a red flag in audit.
-
-### Empirical evidence: `libero_10_lan t3` retry
-
-First pass used sub-instr `"pick up the black bowl"` -> Pi0 ran 15 chunks
-with gripper open at end. We bailed to LLM-scripted pick (which also
-failed — bowl is thin, vertical grasp slides off), declared strict failure.
-
-Retry on the same (suite, task, seed) used the **full current task prompt**
-`"put black bowl inside bottom drawer and close it"` from the same
-pre-pos. Pi0 picked the bowl in 19 chunks, gripper qpos sum ≈ 0.004
-(firm grasp), no scripting needed. Historical versions used a legacy/debug
-object-pose lift cut here; current perception-isolated runs should verify
-without it.
-
-The retry's failure shifted to the place step (drawer floor friction
-releases the object during slide; separate physics problem). The pick
-itself was solved by a one-line prompt change.
-
-**Lesson**: when `pi0_pick` returns "nothing happened" on a
-`libero_10` (or any cluttered) task, try the current task text
-*before* anything else. Do not read BDDL files for this text.
-Sub-instructions only really shine on
-`libero_spatial`.
-
-## Picking the right `pi0_pick` prompt — quick reference
-
-The Pi0.5 checkpoint is `pi05_libero130_fullshot/30000` — SFT on all
-130 libero tasks with their original task instructions. The escalation
-ladder above is the operating discipline; this table is the quick
-lookup once you know which rung to start on.
-
-| Prompt strategy | When to start here | Notes |
-|---|---|---|
-| `"pick up the {object}"` | `libero_spatial` (visually unambiguous, single canonical object) | Prompt-blind regime — model picks whatever's on the table. Works regardless of prompt details. |
-| Full task instruction (e.g. `"put the black bowl in the drawer and close it"`) | `libero_10` *default* — pick this first. Also: any task where Pi0 was trained with a multi-step instruction (drawer, stove, microwave). | Gives Pi0 task context. Use short budgets and verify after the grasp so Pi0 does not continue into place. |
-| Spatial qualifier (`"pick up the X on the cabinet"`) | Elevated objects or edge-of-workspace placements where the default view doesn't isolate the target | Helps with vertical reach on cabinet-top / stove-top picks. |
-
-## Common failure modes and how to recognize them
-
-Read these signals from `state_NN.json` after each command:
-
-### Pick missed (gripper closed on empty space)
-- EEF lift/gripper closure indicate an attempted grasp, but the image shows the
-  object still in its original location.
-- Sometimes `gripper_qpos sum ≈ 0` (fully closed = empty) — gripper open near 0.08 is normal for libero 2f85 holding nothing.
-
-**Fix:** re-pre-position more precisely, retry pi0_pick with a better prompt or
-spatial qualifier.
-
-### Object slipped during move
-- Image evidence shows the object no longer moving with the gripper, or the
-  gripper/EEF signals indicate the grasp was lost during transit.
-- The object appears lower than expected in the post-move frame.
-
-**Fix:** re-localize, recover the object if safe, and use smaller
-`step_clip` (0.015) plus multi-stage motion (lift z high first -> travel ->
-descend) on the next physical attempt.
-
-### EEF stuck (OSC limits)
-- `move_result.final_dist_m > tol AND steps_used == max_steps`
-- EEF position doesn't change between two state dumps
-
-**Fix:** check for collision — Panda wrist hits microwave/cabinet top.
-Lower target z OR break path into stages that go AROUND obstacles. There's
-no collision-aware planner; you must script the detour.
-
-**Special case — OSC stalls at the SAME xy across multiple variants**: if
-the EEF stops at the same `(x, y)` for 3+ different staging plans (different
-approach z, different x entry, max `step_clip=0.05`), it is **not** a
-collision and **not** a tuning issue. It is a Panda IK / OSC singularity
-at that workspace location. Scripted `move_to` cannot bypass it.
-
-Permitted responses (Rule 1 forbids Pi0 fallback for place):
-1. **Try a completely different current-episode task strategy** — push the
-   object across the table instead of lifting through workspace; approach the
-   goal from a different side; pre-orient the wrist before the move.
-2. **Decompose the move differently** — break it into more stages, change
-   which axis is varied first, raise the carry altitude to clear the
-   singularity region.
-3. **Declare strict failure for this task** if no scripted variant works
-   and document the dead-end in `strategy_notes`. A negative-result audit
-   beats a Pi0-end-to-end "success" that violates Rule 1.
-
-t9 is the canonical example: 6+ scripted variants all stalled at y≈0.26
-trying to enter the microwave cavity. The prior session escalated to Pi0
-end-to-end (now forbidden by Rule 1) — that audit entry is grandfathered
-but must not be reproduced. A fresh t9 attempt should either find a
-scripted detour or be documented as a strict failure.
-
-### Pi0 did the place (constraint violation!)
-- Right after `pi0_pick`: `pick_result.libero_terminated=True` OR
-- `chunks_used` much higher than expected (≥ 25 for a single pick) AND
-  image evidence shows the target already at the goal location
-
-**Fix:** use a shorter `max_chunks` budget, verify after the likely grasp, and
-pre-position EEF directly above target so Pi0 needs less travel before contact.
+### How to use `segment` (SAM3) — practical tips
+
+`segment` is the fastest way to localize: one call gives you a `world_xyz`
+that is a robust MEDIAN over the whole object mask (hundreds of pixels), which
+beats eyeballing 3–5 pixels. Workflow:
+
+1. Read `image_cam_hi_NN.png`, decide the target by the task's spatial RELATION.
+2. Call `segment` with a **plain visual phrase + the relation**, then read the
+   returned `world_xyz` and the `segment_overlay_NN_XX.png` to confirm the mask
+   is on the right object before you move.
+3. **Two camera views — YOUR choice via the `"camera"` field** (`segment` works
+   on either; default `"agentview"`):
+   - `"camera":"agentview"` — the fixed ~1 m cam (±8–13 cm). Use it to choose
+     WHICH object (global layout / spatial relation) and get a rough xy.
+   - `"camera":"wrist"` — the eye-in-hand cam (±1–2 cm), reads the wrist world
+     map in the SAME world frame. Use it to PRECISELY localize once the gripper
+     is parked over the target. ⚠ It is null / all-table until you `move_to`
+     ~15–20 cm over the target (the wrist only sees the gripper+table before
+     that), so segment agentview first, approach, THEN segment wrist.
+   Typical coarse→fine: agentview select → `move_to` above → wrist refine → grasp.
+   You decide when the wrist refinement is worth it (small / closely-spaced /
+   identical objects benefit most; a big isolated plate may not need it).
+
+**Prompt phrasing (important — SAM3 is sensitive):**
+- ✅ Use plain colour + shape + spatial relation: `"the black bowl on the stove"`,
+  `"the white plate"`, `"the bowl on the cookies box"`.
+- ❌ Do NOT use the object's internal/brand NAME from `object_names`/BDDL:
+  `"the akita black bowl"` scores ~0.03 (no detection) because SAM3 can't ground
+  "akita"; the same object as `"the black bowl on the stove"` scores ~0.76. Strip
+  proper nouns (`akita`, `glazed_rim_porcelain_…`) — say what it *looks like*.
+- For two identical objects, the relation in the prompt (`…on the stove`,
+  `…left of the plate`) usually steers SAM3 to the right instance; verify via the
+  overlay and the world-z (an object *on* a fixture has a higher z than a
+  table-level twin). The two-camera relation protocol still applies when SAM3
+  can't disambiguate from text alone.
+- If `segment` returns `{"error":...}` (low score / service down), walk the
+  prompt (drop the brand word, simplify, add the relation) or fall back to
+  manual pixel → `back_project`.
+
+## The strict-hybrid recipe (perception variant)
+
+A typical bowl→plate cell looks like:
+
+1. `view_driver_state({"step":0})`; inspect `task_language`,
+   `image_cam_hi_00.png`, and `camera_meta.json`.
+2. Identify the target by the task's spatial RELATION, not its name (Rule 7).
+3. Localize it — pick its pixel in `image_cam_hi_00.png`,
+   `back_project({"row":ROW,"col":COL,"step":0})` (coarse). Refine with the
+   wrist cam after pre-positioning (fine).
+4. **Pre-position** ~15–20 cm above it: `move_to([obj_x, obj_y, carry_z])`,
+   gripper open. Re-`back_project` a wrist pixel here and correct the xy before
+   grasping.
+5. `pi0_pick` with the right prompt (start "pick up the {object}", escalate per
+   the Pi0 ladder — see below). Confirm the grasp via gripper + wrist (Rule 1b).
+6. `set_gripper({"gripper":1,"steps":5})` to firm the grip.
+7. Localize the placement region (basket / plate / drawer slot) the same way.
+8. `move_to([place_x, place_y, carry_z])` to traverse at constant height.
+9. Optionally descend `move_to([place_x, place_y, place_z])`.
+10. `release` — predicate (`On`/`In`) checks → `libero_terminated=True` if hit.
+11. Light retreat (`move_to` upward) so the next step's image is clean.
+
+> **Predicate fire timing.** Most LIBERO `On(X, Y)` predicates fire on
+> `release` if `X` is above `Y`'s region. `In(X, container)` needs `X` to
+> have actually entered the container's volume before release. If a release
+> fires `term=False` but the object is on top of the right region, descend
+> 1–2 cm more and re-`release`.
+
+## Pi0 prompt ladder (Rule 3 — Pi0 IS the delivery service)
+
+Try in order; each rung uses a slightly more specific prompt or a re-pre-pos.
+
+1. `"pick up the {object}"` — generic sub-instruction.
+2. The full `task_language` verbatim (e.g. `"Pick the akita black bowl on the
+   cookies box and place it on the plate"`).
+3. Add a spatial qualifier (`"…on the wooden cabinet"`, `"…next to the
+   basket"`).
+4. Re-pre-position 5 cm lower or shifted, then retry rung 2 or 3.
+
+Empirically Pi0 sometimes needs the **full prompt with the spatial
+qualifier** for elevated picks (stove, cabinet-top, drawer). See
+`feedback_pi0_pick_full_prompt.md` and the prompt-ladder note in MEMORY.
+
+## Key hyperparameters
+
+- Single-step `xyz` within ±0.30 m of current eef or OSC flips IK. Split
+  long traversals into 2–3 carry-z waypoints.
+- `lift_thresh`: 0.05 (flat/stable) / 0.08 (slippery tall bottles).
+- `step_clip`: 0.025 (empty / box) / 0.015 (cans) / 0.012 (tall bottles).
+- Frame z (from `state.robot0_eef_pos[2]` at step 00):
+  ≈ 0.68 → LIVING_ROOM, ≈ 1.17 → KITCHEN, ≈ 0.26 → OBJECT.
+- BOWL: `eef_y_target = perceived_plate_y + 0.045` (bowl-eef y-offset).
+- TALL BOTTLES: carry at `z=0.30`, release without descending.
+- Approach high-then-vertical; recover by re-`pi0_pick`, not by hovering.
+
+## Reading state
+
+After every primitive tool call, the return value already carries the new
+`state`, the merged `command`/`result`/`elapsed_s` log, and the image paths —
+you do **not** need a separate read. When you need an older step, call
+`view_driver_state({"step":NN})` (omit `step` for the latest):
+
+1. Check `result.success`, `final_dist_m`, `peak_lift_m`, etc. in the returned
+   log.
+2. Read the returned `image_cam_hi_NN.png` path → visual confirmation; pick
+   pixels for any new localization.
+3. Check `state.robot0_eef_pos` / `robot0_gripper_qpos` / `libero_terminated`
+   in the returned `state`.
+
+You **do not** open the depth maps yourself — feed a pixel to `back_project`.
+Don't call `view_driver_state` immediately after a primitive that already
+returned the new state.
+
+## Common failure modes
+
+- **Pick missed (gripper closed empty).** `result.peak_lift_m` < `lift_thresh`,
+  `min_gripper_opening` ≈ 0. Re-pre-position 1–2 cm lower or shifted; retry
+  Pi0 with next prompt-ladder rung.
+- **Object slipped mid-carry.** `release` returns `term=False` and the object
+  is no longer where you `release`d it. `release`, re-pre-pos above it,
+  `pi0_pick` again, traverse again.
+- **OSC stuck.** `move_to` returns `final_dist_m > 0.05` at `max_steps` and
+  same xy twice → try `rotate_pitch`, split into more waypoints, or
+  `move_pose` (co-varying) for the cabinet-front singularity.
+- **Placement off because localization was wrong.** The release puts the
+  object on bare table instead of on the plate. Re-read `image_cam_hi_NN.png`,
+  pick a different pixel on the target region (sample 3 pixels on the plate's
+  flat top, median the back-projected xy), redo. Tip: if depth at your chosen
+  pixel is much closer than the table z, you picked the camera's near edge /
+  an object rim — pick again.
 
 ## Verifying strict compliance
 
-After each run, check the pick step entry in states.json:
-
-```python
-states = json.load(open("$OUTPUT_DIR/states.json"))
-pr = states[pick_step_idx]["result"]  # the pi0_pick step
-assert pr["libero_terminated"] == False, "Pi0 finished the task — violation!"
-assert pr["chunks_used"] < 25, "Pi0 ran too long; may have done place"
-```
-
-And the release step entry:
-
-```python
-rr = states[release_step_idx]["result"]  # release step
-assert rr["libero_terminated"] == True, "Task didn't terminate during release"
-```
-
-These two together are your audit trail: **pick exited without libero_term;
-release triggered libero_term ⇒ LLM did the place**.
+Before saving the audit, confirm your command history is physics-only. The
+teleport primitives are not even in the tool list, but audit it anyway: read
+the `command` field of every `states.json` entry (via
+`view_driver_state({"step":NN})` per step, or `read_text_file` on
+`{output_dir}/states.json`) and confirm every `command.action` is one of the
+allowed physics primitives (`move_to`, `pi0_pick`, `pi0_doubled`, `release`,
+`set_gripper`, `rotate_wrist`, `rotate_pitch`, `move_pose`) — no
+`set_object_pose` / `articulate_to` / `js_move_to` / `carry_object` appears.
 
 ## Persisting successful runs as audit JSONs
 
-The server workflow is great for iteration but **leaves nothing reproducible
-behind once the server exits** — `$OUTPUT_DIR/states.json` and the
-`images/` subdir live only until the next server run wipes them. The
-libero_spatial corpus at `results_all_spatial/tN_sM.json` is the gold
-standard: each file is a single self-contained record of one
-(task, seed) rollout that an auditor (or a future Claude) can read months
-later to verify strict compliance, replay the strategy, or compare runs.
+When `state.libero_terminated == true`:
 
-**Goal**: after each successful (task, seed) iteration, produce one such
-JSON in `results_all_<suite>/tN_sM.json` matching the libero_spatial
-schema, plus an entry in `all_rows.json`.
+a. The working command recipe (`{output_dir}/recipe_{recipe_tag}.jsonl`) is
+   **auto-exported by the runner** from the non-error primitive commands in
+   `states.json` — you do NOT hand-write it.
+b. Write a minimal audit JSON with `write_text_file` to
+   `{output_dir}/{recipe_tag}.json` with at least: `suite`, `task_id`, `seed`,
+   `regime: "strict_perception"`, `strategy_notes` (mention HOW you localized —
+   which pixel, depth, back-projected world xyz), `pick_result` (the `result`
+   from your `pi0_pick`), `final_state` (the latest `states.json` entry's
+   `state` field), `libero_terminated: true`.
+c. Call `finish({"status":"success","summary":"…"})`.
 
-### Workflow
+If unrecoverable after honest exploration in this one episode, write
+`{output_dir}/{recipe_tag}.json` with `libero_terminated: false` +
+`strategy_notes` describing what you tried, the back-projected xyz you used, and
+which step failed. Then call `finish` (NO reset, NO second attempt).
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ 1. Tool command iterate (Rule 0 + command vocab + heuristics).  │
-│    Find a command sequence that gets libero_terminated=True.    │
-│    Write each command as a JSON line in a scratch file as you   │
-│    go, e.g. $OUTPUT_DIR/recipe_t<N>_s<M>.jsonl, so the          │
-│    final recipe is captured cleanly (do NOT rely on memory).    │
-│                                                                 │
-│ 2. Confirm strict compliance via the asserts above.             │
-│                                                                 │
-│ 3. Stitch the run into a per-rollout audit JSON:                │
-│    - the pick log (chunks, lift, gripper closure, diagnostics)  │
-│    - the post-pick state (eef + all object positions)           │
-│    - the move_to logs (each stage)                              │
-│    - the release log (gripper opening progression)              │
-│    - the final state and libero_terminated=True                 │
-│    - the strategy notes (which prompt, which xy, which staging) │
-│                                                                 │
-│ 4. Save to results_all_<suite>/tN_sM.json. Append to all_rows.  │
-│                                                                 │
-│ 5. (Optional) Codify the working sequence as a per-task replay  │
-│    script so it can be re-run unattended on a new seed and the  │
-│    audit JSON regenerated from scratch.                         │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Where to save
-
-| Suite | Directory | Per-rollout filename |
-|---|---|---|
-| libero_spatial | `results_all_spatial/` | `tN_sM.json` (gold standard, already populated) |
-| libero_10 / libero_long | `results_all_10/` | `tN_sM.json` (to be built — only WORK_DONE.md table exists) |
-| libero_goal | `results_all_goal/` | (future) |
-| libero_object | `results_all_object/` | (future) |
-
-In each directory also maintain `all_rows.json` — a single list of all the
-per-rollout dicts, for easy bulk loading and stats.
-
-### The schema (match libero_spatial exactly)
-
-Top-level keys, in order:
-
-```jsonc
-{
-  "task_id": 9,
-  "seed": 0,
-  "elapsed_s": 22.3,
-  "regime": "strict",  // or "pi0_doubled" — "pi0_end_to_end" is FORBIDDEN (Rule 1); only kept in historical entries
-  "strategy_notes": "lift to z=1.20 before any +y motion; cavity entered at x=-0.05",
-  "pick_result":     { /* states.json[pick_step]["result"] verbatim */ },
-  "post_pick_state": { /* states.json[pick_step]["state"] verbatim */ },
-  "object_lifted_during_pick_m": 0.07,         // peak_lift_m, sanity
-  "target_xyz":      [x, y, z],                // computed release target
-  "target_diag":     { eef, target_obj, offset_obj_minus_eef },
-  "move_results":    [ /* list of states.json[move_step]["result"], one per stage */ ],
-  "release_result":  { /* states.json[release_step]["result"] */ },
-  "final_state":     { /* states.json[release_step]["state"] */ },
-  "libero_terminated": true,                   // final
-  "<task-specific metric>": 0.0143,            // bowl_to_plate_xy_m,
-                                                // mug_in_heating_region, etc.
-  "stopped_at_pick": false                     // audit flag
-}
-```
-
-The two new keys vs. spatial:
-
-- **`regime`** — one of `"strict"` or `"pi0_doubled"` (Pi0 used for a
-  non-pick VLA skill like knob/drawer/door). `"pi0_end_to_end"` is
-  **forbidden by Rule 1** and must not be produced by new runs — it appears
-  only in grandfathered historical entries. Spatial entries are all
-  implicitly `"strict"`; libero_10 runs MUST set this explicitly.
-- **`strategy_notes`** — a 1-2 sentence human-readable summary of what
-  worked, especially the *non-obvious* bit (e.g. for t8 "opposite-corner
-  placement, not center"). Future-you will thank present-you. If the run
-  was a strict failure (Rule 1 forbids escalation to Pi0 end-to-end), say
-  which LLM placement variants you tried and why each failed.
-
-If a run used more than one move_to (typical on libero_10 — lift, traverse,
-descend), include them as a **list** under `move_results`, in execution
-order. Spatial only needed one move_to so it used a singular `move_result`;
-extend the schema rather than collapse.
-
-### Stitch helper
-
-Run this at the end of a successful session, before calling `finish(success)`:
-
-```bash
-python - <<'PYEOF'
-import json, os
-OUTPUT_DIR = "$OUTPUT_DIR"
-OUTDIR  = "${PHYSICALAGENT_REPO_ROOT:-$(pwd)}/physical_agent/primitives/results_all_10"
-TASK_ID, SEED = 9, 0                                           # <- fill in
-REGIME = "strict"                                               # <- fill in ("strict" or "pi0_doubled" — Rule 1 forbids "pi0_end_to_end")
-NOTES  = "OSC IK barrier at cavity entry; Pi0 full task prompt solved in 186 chunks"
-
-states = json.load(open(os.path.join(OUTPUT_DIR, "states.json")))
-# states is a list; indices are the step indices
-
-pick_steps    = [n for n, e in enumerate(states) if e.get("command", {}).get("action") == "pi0_pick"]
-move_steps    = [n for n, e in enumerate(states) if e.get("command", {}).get("action") == "move_to"]
-release_steps = [n for n, e in enumerate(states) if e.get("command", {}).get("action") == "release"]
-pick_n    = pick_steps[0]      if pick_steps    else None
-release_n = release_steps[-1]  if release_steps else None
-
-record = {
-    "task_id": TASK_ID,
-    "seed": SEED,
-    "regime": REGIME,
-    "strategy_notes": NOTES,
-    "pick_result":     states[pick_n]["result"]    if pick_n is not None else None,
-    "post_pick_state": states[pick_n]["state"]     if pick_n is not None else None,
-    "move_results":    [states[n]["result"] for n in move_steps],
-    "release_result":  states[release_n]["result"] if release_n is not None else None,
-    "final_state":     states[-1]["state"],
-    "libero_terminated": states[-1]["libero_terminated"],
-    "elapsed_s": sum(e.get("elapsed_s", 0.0) for e in states),
-}
-os.makedirs(OUTDIR, exist_ok=True)
-out = os.path.join(OUTDIR, f"t{TASK_ID}_s{SEED}.json")
-with open(out, "w") as f:
-    json.dump(record, f, indent=2)
-print(f"saved {out}")
-
-rows_path = os.path.join(OUTDIR, "all_rows.json")
-rows = json.load(open(rows_path)) if os.path.exists(rows_path) else []
-rows = [r for r in rows if not (r["task_id"] == TASK_ID and r["seed"] == SEED)]
-rows.append(record)
-rows.sort(key=lambda r: (r["task_id"], r["seed"]))
-json.dump(rows, open(rows_path, "w"), indent=2)
-print(f"updated {rows_path} (now {len(rows)} rows)")
-PYEOF
-```
-
-Edit `TASK_ID`, `SEED`, `REGIME`, and `NOTES` for each run. The helper
-reads states.json directly, picks the first `pi0_pick` step as the
-canonical pick, the last `release` step as the canonical place, and
-captures every `move_to` step in execution order.
-
-### Codify into a replay script (optional but recommended for benchmark runs)
-
-Once a (task, seed) pair is solved interactively, copy the working command
-sequence (from `recipe_t<N>_s<M>.jsonl`) into a small Python module under
-`physical_agent/primitives/strategies/`:
-
-```python
-# strategies/t9_strict_attempt.py — example shell
-def commands_for(task_id, seed, state_00):
-    """Return a list of structured runtime tool calls that solve t9."""
-    return [
-        {"action": "start_recording"},
-        {"action": "move_to", "xyz": [-0.020, -0.020, 1.10], "gripper": -1,
-         "tol": 0.012, "step_clip": 0.03, "max_steps": 60},
-        {"action": "pi0_pick",
-         "prompt": "put the yellow and white mug in the microwave and close it",
-         "max_chunks": 100, "lift_thresh": 99.0, "gripper_closed_thresh": 99.0},
-        # ... etc — paste from recipe_t9_s0.jsonl
-        {"action": "save_video",
-         "path": "videos/t9_replay.mp4", "fps": 25},
-        {"action": "finish", "status": "success"},
-    ]
-```
-
-Then a single `batch_replay.py` runner walks `strategies/` and produces
-`results_all_10/all_rows.json` for the whole suite unattended. This is
-the libero_10 equivalent of `test_hybrid_all_spatial.py`. Until that
-runner exists, every successful run MUST go through the stitch helper
-above so we don't lose the audit trail again.
-
-### Don't skip persistence even on hard runs
-
-If you reach a strict-regime dead end (Rule 1 forbids the Pi0-place
-fallback that used to live here), still save the record. Set the regime
-to whichever strict-allowed value applies (`"strict"` or `"pi0_doubled"`),
-mark `libero_terminated` honestly (false if you couldn't fire the
-predicate), and use `strategy_notes` to enumerate the LLM placement
-variants you tried and why each failed. Negative-result audits are how
-future sessions know not to retry the same dead end.
+> The `regime: "strict_perception"` tag distinguishes these audits from the
+> oracle-state `strict` regime in mixed-mode datasets.
 
 ## Iteration heuristics
 
-Historical multi-episode retry notes are useful for offline strategy search,
-but the current MCP run is a single episode unless the runner explicitly says
-otherwise.
+- After 2 failed retries on the same step, **stop tuning numerics** and
+  inspect images: read `image_cam_hi_NN.png` at pick / pre-release /
+  post-release. The visual disagreement is usually the bug (you picked the
+  wrong pixel, or Pi0 grabbed the decoy). This is the lesson of
+  `feedback_failure_forensics.md` — applies even more strongly here.
+- If a release reports `term=False` but the object is visibly on the target
+  region, descend 1–2 cm more and `release` again; predicate often needs
+  contact, not just hover.
+- Once you use `back_project`, trust it: if a localization "feels off", it's
+  because you picked the wrong pixel — not because the depth / calibration is
+  wrong. (`back_project` inverts `K` before the extrinsic; the raw
+  `E @ [col·z, row·z, z, 1]` form skips it and is wrong — which is why you use
+  `back_project` and never hand-roll the math.)
 
-When something fails, try these in order:
+## What "strict_perception" means concretely
 
-1. **Re-read state** — never assume objects are where you last left them.
-2. **Re-pre-position** — gripper open, EEF above object xy at safe z.
-3. **Tighten `tol`** for the failing move_to (0.02 -> 0.008).
-4. **Reduce `step_clip`** if mid-translation slip (0.025 -> 0.015).
-5. **Break move into stages**: lift in place -> travel high -> descend.
-6. **Adjust Pi0 budget/verification** — lower `max_chunks` if Pi0 goes too far;
-   increase modestly if exiting before secure grasp.
-7. **Different prompt — walk the Rule 3 escalation ladder**: sub-instr ->
-   current task text -> spatial qualifier -> image-guided repositioning. For
-   `libero_10` cluttered scenes, **start from full task language**, not
-   sub-instr. Lower pre-pos z (e.g. 0.65) constrains Pi0 spatially.
-8. If scene state has drifted irrecoverably (object on floor, knocked off
-   cabinet, etc.), write a stuck/failure audit unless the runner explicitly
-   allows a separate retry episode.
-8a. **After the second failed retry, render the failed-step images and
-   describe what you see.** Rule 0 §"Failure forensics" covers this in
-   full — `Read` the PNGs at pick, pre-release, post-release, and
-   any articulation step; the visual disagreement with your mental
-   model is where the bug is. Numerical tweaks without image
-   inspection are how you lose 3 hours on a 10-minute problem
-   (libero_10 t3 drawer is the canonical example).
-9. **Pi0 fallback for the place is NOT an option** (Rule 1). If physical
-   recovery cannot safely complete the place, document the strict failure and
-   move on.
+- **No GT object coordinates anywhere in your reasoning.** The `state` you
+  read has none; the only legitimate sources of object xyz are the camera
+  images + depth + the precomputed `world/` and `world_wrist/` maps (via
+  `back_project`).
+- **No teleport primitives.** The four are deleted.
+- **Pi0 only does the grasp.** You script every motion + release.
+- **Fully oracle-free, including the grasp.** There is no GT-lift oracle —
+  `pi0_pick` reads NO GT object pose and takes no tracking argument. You judge
+  the grasp from gripper width + the wrist cam, and TASK success from
+  `state.libero_terminated` (the benchmark predicate).
+- **Single attempt.** One episode, no reset (Rule 2).
+- The expected audit `regime` is `strict_perception`.
 
-Don't loop a single strategy more than 3 times within one episode. After 3
-retries on the same plan, change the plan (different image-derived target,
-different prompt, different staging) or write a stuck/failure audit.
+## Reference cases
 
-## What "strict" means concretely
+The seed-0 sweep results live under `resources/libero/results_*_pert/`
+(`results_10_pert`, `results_object_pert`, `results_spatial_pert`,
+`results_goal_pert` — PRO swap+task, t0–t9). Each solved cell has an audit JSON
++ a `recipe_{tag}.jsonl` command sequence. The consistent winning pattern:
+localize → pre-pos → `pi0_pick` → `set_gripper` → move → `release` in 6–12
+commands.
 
-A task is **strict** if for EVERY pick-then-place cycle:
-- The `pi0_pick` command exited with `libero_terminated=False` (Pi0 didn't
-  finish the task).
-- The `release` command was the one that triggered `libero_terminated=True`
-  (the LLM's release primitive caused libero's `On`/`In` predicate to fire).
+When you write a new audit, browse a sibling cell's `recipe_{tag}.jsonl` as a
+*technique* template — but never paste its xyz; re-derive every position via
+`back_project` from THIS scene's depth.
 
-A task is **non-strict (Pi0 doubled)** if Pi0 was used for a non-pick VLA
-skill (knob turn for stove tasks, drawer push for close-drawer tasks). This
-is sometimes unavoidable — note it in your write-up but it's a weaker
-demonstration.
-
-A task **failed** if `libero_terminated` never fired before max_steps.
-
-## Reference cases from prior session
-
-Cases that worked strict (use as templates):
-
-| Pattern | Example task | Key trick |
-|---|---|---|
-| Simple table pick -> plate | libero_spatial t0 | Direct offset compensation |
-| Bowl in closed drawer | libero_spatial t4 | Full current task prompt can help Pi0 open drawer and grasp; use modest max_chunks and verify grasp from images/gripper evidence |
-| Bowl on cabinet top | libero_spatial t9 | Same as above; verify cabinet-top grasp with image/gripper evidence |
-| Two objects -> basket | libero_10 t0, t1, t7 | Slow step_clip=0.02, multi-stage move per pot |
-| Two objects -> two plates | libero_10 t4 | Same; separate pick+place loops per mug |
-| Object into narrow cavity (In) | libero_10 t9 | `rotate_pitch +0.9` to thread cavity opening; `rotate_wrist +3.0` after release pushes object deeper + retreats. **Close(door) must be physical** (pi0_doubled "close the door" or OSC push) — no teleport (Rule 4); record strict_failure if unreachable |
-
-Cases that failed strict (next session, try these):
-
-- **libero_10 t8 (both moka -> stove)**: ✅ **Solved 2026-05-19** with strict
-  hybrid (Pi0 only for both picks, LLM for all moves/places). Key insight:
-  the cook_region is a 15×15cm box centered at `(-0.050, -0.200)`. **Place
-  the two pots at opposite corners, never one in the middle** — the first
-  moka in center leaves no room for the second and they collide on release.
-  Working layout: moka_2 -> back-left `(-0.091, -0.228)`, moka_1 -> front-right
-  `(-0.014, -0.155)`, ~11 cm apart. Slow descend to z=1.05 (step_clip=0.01)
-  converged in 93 steps without OSC stall. See `videos/t8_v4_SUCCESS.mp4`.
-- **libero_10 t9 (mug in microwave + close door)**: In(mug, heating_region)
-  is solved physically with `rotate_pitch`/`rotate_wrist`. ⚠ The Close(microwave)
-  step previously used `articulate_to` (teleport) — RETRACTED under Rule 4. The
-  door must be closed physically (pi0_doubled "close the door" or an OSC push from
-  a reoriented pose); if unreachable, record a strict_failure. Key insights:
-  1. **In(mug, heating_region)**: `rotate_pitch +0.9` tilts the gripper
-     forward so its wrist body (~3 cm above eef) fits through the
-     14-cm-tall cavity opening (z ∈ [0.944, 1.088]); without the pitch,
-     OSC stalls before the eef can enter and any single-pose-axis variant
-     fails for the same reason.
-  2. **Close(microwave)**: the Panda struggles to reach the door panel via OSC
-     (workspace boundary at x≈-0.08, door at x≈-0.18). Closing it physically is
-     hard — hand it to `pi0_doubled` ("close the microwave door") or push from a
-     reoriented non-singular pose; a swept push can knock the just-placed mug back
-     out along the door's swing arc, so push gently and re-check. No teleport (Rule 4).
-  3. The mug must be pushed deeper than y≈0.29 BEFORE closing the door,
-     otherwise the door's leading edge sweeps it back out. The
-     `rotate_wrist delta_yaw=+3.0` after release does triple duty
-     (unhook + retreat + nudge-mug-deeper) and gets the mug to y≈0.33
-     reliably.
-
-  The prior session's `pi0_end_to_end` audit entry is grandfathered
-  but is forbidden by Rule 1; the current strict recipe replaces it.
-
-## Appendix: LLM-scripted pick fallback (when Pi0 won't cooperate)
-
-**Read Rule 3 ("LLM is a delivery service for Pi0") and walk the Pi0
-prompt escalation ladder first.** Specifically — if your only Pi0
-attempt was a sub-instruction `"pick up the X"` and it failed once,
-try the **full current task text** before reaching this appendix.
-That single change has resolved `libero_10` cluttered-scene picks
-that looked unrecoverable. See the `libero_10_lan t3` retry case.
-
-Only after Pi0 has failed across (a) sub-instr, (b) full task
-language, (c) spatial qualifier, and (d) image-guided repositioning, may you
-script the pick yourself. This violates "Pi0 only for pick" strictly
-but is a valid escalation when Pi0's training distribution genuinely
-does not cover the current scene state.
-
-The recipe:
-
-```jsonc
-// 1. Pre-pos high above the object (gripper open, large step OK)
-{"action": "move_to", "xyz": [obj_x, obj_y, obj_z+0.25], "gripper": -1,
- "tol": 0.012, "step_clip": 0.03, "max_steps": 60}
-
-// 2. Descend until EEF auto-stalls on the object (DO NOT force a low target).
-//    Aim eef_z = obj_z + 0.05 with small step_clip. Likely stops above target
-//    when fingers contact object. Read state — if eef_z > obj_z + 0.08, the
-//    EEF stopped early (something else blocking) -> re-align xy and retry.
-{"action": "move_to", "xyz": [obj_x, obj_y, obj_z+0.05], "gripper": -1,
- "tol": 0.008, "step_clip": 0.015, "max_steps": 60}
-
-// 3. Close gripper firmly (10-15 steps). Critical to wait long enough —
-//    the PD takes ~10 steps to fully clamp.
-{"action": "set_gripper", "gripper": 1, "steps": 15}
-
-// 4. Read state: gripper qpos sum should be ~0.03-0.06 (NOT ~0.0).
-//    If sum ≈ 0 -> fingers touched (empty grasp) -> re-position xy +/- 5mm and retry.
-//    If sum > 0.06 -> gripper still partly open (didn't clamp) -> repeat set_gripper.
-
-// 5. Lift verify: move EEF up by 15cm; read state. obj_z should track eef_z
-//    within ±1cm (the offset_z observed at grasp time).
-{"action": "move_to", "xyz": [obj_x, obj_y, eef_z+0.15], "gripper": 1,
- "tol": 0.012, "step_clip": 0.02, "max_steps": 40}
-```
-
-**Verification metric (this is your strict-grasp criterion)**:
-`(obj_z_after_lift - obj_z_at_grasp) >= 0.07` AND `0.02 < gripper_qpos_sum < 0.07`.
-
-Anything else is a false grasp — release and retry.
-
-## Appendix: When EEF stalls on place (geometry trap)
-
-Symptom: `move_to` runs `max_steps` but `final_dist_m > tol`, and the EEF
-position barely moves between successive states.
-
-Causes:
-- Robot wrist hitting a housing top (stove, microwave, cabinet top plate).
-- Held object's bottom touching the target before EEF reaches its target z.
-- Panda IK at a near-singular config can't translate without rotation.
-
-**You CANNOT force the EEF lower with OSC** — there's no command to push past
-the limit. Options:
-
-1. **Release here anyway**: if `obj_z - target_z < 0.10`, gravity finishes
-   the job. Drift may be 1-3 cm.
-2. **Approach from a different angle**: lift back up, translate xy to a
-   different approach vector, descend. Sometimes IK frees up.
-3. **Aim eef_z higher**: accept release height > optimal. For tall objects
-   (moka pot, mug) in stove/microwave context, sometimes `eef_z = obj_z + 0.10`
-   is the lowest you can reach.
-
-If after 3 staging variants the EEF still stalls and release induces > 10 cm
-drift, write a stuck/failure audit unless the runner explicitly allows a
-separate retry episode. Rule 1 forbids using Pi0 to do the place, so current
-episode recovery must stay within physical MCP tools.
-
-## Memory files to read
-
-**You have access to a persistent auto-memory at**
-`resources/libero/memory/`. The index is
-`MEMORY.md` (one-line hooks per memory, auto-injected by CLAUDE.md into
-the system prompt of every new session). Individual entries live as
-`feedback_*.md` / `project_*.md` / `reference_*.md`.
-
-**Before starting a new (suite, task) attempt**: scan `MEMORY.md` for
-entries whose names or descriptions touch the cell you're about to do
-(e.g. "swap", "plate", "stove", the task type), then `Read` the matching
-`.md` for the full rule. Doing this saves hours: many of the memories
-below capture root causes that took 30+ minutes to diagnose, with the
-fix-recipe written down so you skip straight to the working approach.
-
-**When to write memory**: any time you fix a failure that took more than
-two iterations to diagnose, or find a non-obvious env quirk (predicate
-threshold, fixture offset, finger geometry constraint). Save it as a
-new `feedback_*.md` with `type: feedback` frontmatter and a one-line
-hook in `MEMORY.md`. The next session — yours or someone else's — will
-skip your debugging cycle.
-
-### High-signal entries for libero hybrid work
-
-Project-level orientation:
-- `project_rlinf_agentic_workdir.md` — default cwd
-- `project_liberopro_install.md` — LIBERO-Pro install + benchmark patch
-- `project_libero_spatial_t0_t9_pro.md`, `project_libero_10_t0_t9_done.md`,
-  `project_libero_object_pro_done.md`, `project_libero_goal_pro_progress.md`
-  — per-suite progress / corpus pointers
-- `project_libero_hybrid_llm_vla.md` — running record of findings
-- `project_pi05_libero_prompt_blind.md` — Pi0 prompt-blind discovery on
-  libero_spatial
-- `feedback_no_teleport_rule.md` — the four teleport primitives are removed;
-  physics-only recipes for stove-knob / drawer (READ THIS — Rule 4)
-- `project_rotate_pitch_primitive.md` — `rotate_pitch` (§2)
-- `project_libero_t9_pi0_only.md` — superseded by t9 strict, kept as
-  historical reference
-
-Pi0 prompt + grasp behavior:
-- `feedback_pi0_pick_full_prompt.md` — when to use the full current task prompt
-- `feedback_pi0_delivery_service.md` — Pi0 is for grasp, LLM for the
-  rest (Rule 3 escalation ladder; see §"Rule 3" above)
-- `feedback_pi0_pre_pos_can_hurt.md` — for some objects (plates,
-  swap-side picks), SKIP the pre-pos `move_to` and let Pi0 plan from
-  the default home pose. Pre-pos can break Pi0's learned approach.
-- `feedback_pi0_false_positive_lift.md` — `pi0_pick.success=True` may
-  fire on eef-ascent without grasping; verify with gripper state and images.
-- `feedback_pi0_chunks_egl_crash.md` — keep `max_chunks` modest
-- `feedback_read_image_before_decide.md` — Rule 0 reinforcement
-
-Env mechanics + predicate quirks:
-- `feedback_cook_region_offset.md` — `flat_stove_1_cook_region` is +0.15m
-  offset from stove fixture origin via burner sub-body
-- `feedback_bowl_eef_y_offset.md` — bowl rim-hook leaves bowl ~4.5cm in
-  eef-frame -y; compensate `eef_y_target = predicate_y + 0.045`
-- `feedback_stove_turnoff_strict.md` — TurnOn fires at knob qpos≥0.5, TurnOff
-  at qpos<0; drive the knob PHYSICALLY (pi0_doubled), no teleport
-- `feedback_osc_push_mujoco_nan.md` — for Close(slide-drawer) push continuously
-  with a CAPPED OSC push or pi0_doubled; a long push can NaN the sim
-- `feedback_swap_perturbs_fixtures.md` — libero_goal P2 swap moves
-  ENTIRE FIXTURES (stove/cabinet/rack), not just table objects. Localize the
-  moved fixture visually before computing carry targets; do not read BDDL.
-
-Control + transport tactics:
-- `feedback_scripted_pick_limits.md` — fully scripted pick fails for
-  small objects (<6cm). Keep Pi0 for picks, scripted only for clear
-  geometry.
-- `feedback_render_skip_in_env_step.md` — env render toggle to lift the
-  EGL command budget
-- `feedback_max_episode_steps_libero.md` — use
-  `--max_episode_steps 5000` for sessions
-- `feedback_failure_forensics.md` — after 2 retries on the same plan,
-  STOP tuning and `Read` the images
-- `feedback_workspace_bounds_clamp.md` — editing workspace bounds also
-  clamps action range
-
-Cross-suite progress + non-obvious past failures:
-- `feedback_liberopro_driver_patch.md` — `make_env` benchmark routing
-- `feedback_no_pi0_end_to_end.md` — Rule 1 reinforcement
-- `feedback_rotate_wrist_yaw_sign.md` — yaw sign bug fix
-- `feedback_physics_eval_pipeline.md`, `feedback_checkpoint_frequency.md`
-  — (BuilderBench-only, skip for libero work)
-- `project_libero_10_t0_t5_pro.md` — libero_10 t0–t5 PRO; drawer-close must
-  be a real continuous push (no teleport)
-
-### Workflow
-
-```
-1. New (suite, task) -> cat MEMORY.md, scan for relevant entries.
-2. Read the matching feedback_*.md / project_*.md files BEFORE starting.
-3. Apply the documented fix; don't rediscover.
-4. If you discover something new (took > 2 iterations to find): write
-   a new feedback_*.md and add a one-line hook to MEMORY.md.
-```
-
-## TL;DR launch checklist
-
-```
-0. cat resources/libero/memory/MEMORY.md
-   -> scan one-line hooks; Read matching .md files for relevant fixes.
-1. Confirm the runner has already initialized the env and written states.json[0].
-2. Read states.json[0], images/image_00.png / images_cam/image_cam_00.png.
-   Identify target objects + goal regions.
-3. Iterate: structured MCP tool call -> next entry appended to states.json ->
-            Read images/image_NN.png / images_cam/image_cam_NN.png ->
-            Read states.json[NN] -> next tool call.
-4. For each pick:
-     Call pi0_pick with a modest chunk budget. Confirm the grasp with
-     gripper/image evidence.
-5. For each place:
-     Compute offset, call move_to (slow step_clip, multi-stage)
-     Then release.
-     Confirm libero_terminated=True in release's log.
-     If OSC `move_to` stalls at the same xy across 2+ variants, the task
-     hits a Panda workspace boundary — reorient (rotate_wrist/rotate_pitch)
-     and approach from a non-singular pose, or release if the held object's
-     xy is already over the predicate region. There is NO teleport (Rule 4).
-     If the cavity opening is too narrow for the wrist body geometry, add
-     `rotate_pitch` (§2) BEFORE the push to tilt the gripper forward.
-8. For Close(articulation) goals (door / drawer / lever close), PUSH the
-   articulation physically AFTER placing the object: `pi0_doubled` (Pi0
-   "close the drawer/door") or a CAPPED OSC push that keeps continuous
-   contact (drags the object along). No teleport (Rule 4). If no physical
-   push satisfies the predicate (e.g. drawer is_close needs qpos>0), record
-   a strict_failure with the predicate decomposition.
-9. Audit: pick_term=False AND release_term=True (or close fires during the
-   physical push) -> strict (or pi0_doubled if Pi0 did the contact skill).
-   If LLM placement misses, re-localize and recover if safe; otherwise write
-   a stuck/failure audit. Do NOT call Pi0 to finish the place: Rule 1 forbids
-   it.
-10. **Persist**: run the stitch helper above to produce
-     results_all_<suite>/tN_sM.json + update all_rows.json,
-     set regime + strategy_notes correctly (`"strict"` or `"pi0_doubled"`
-     only — never `"pi0_end_to_end"`).
-11. Call `finish(success)` only after the latest state has
-    `libero_terminated=True`; otherwise call `finish(failure)` with a concise
-    audit summary.
-12. **Memory write-back**: if you discovered a non-obvious fix or env
-     quirk that took >2 iterations to diagnose, save it as
-     `resources/libero/memory/feedback_<name>.md`
-     (YAML frontmatter: `name`, `description`, `type: feedback`; body
-     leads with the rule, then `**Why:**` and `**How to apply:**` lines)
-     AND append a one-line hook to `MEMORY.md`. Next session reads it
-     via the system prompt and skips your debugging cycle.
-```
-
-Good luck. Don't let Pi0 do the place — that's the LLM's job (Rule 1).
-For OSC singularities, reorient with `rotate_wrist`/`rotate_pitch` and
-approach from a non-singular pose; for articulation closes, push physically
-(pi0_doubled / capped OSC push). NO teleport — see Rule 4.
-**Before debugging from scratch, check memory.**
+Begin by reading `resources/libero/memory/MEMORY.md`, then call
+`view_driver_state({"step":0})` and inspect the returned `image_cam_hi_00.png`
+(+ `camera_meta.json` via `view_camera_meta`); localize the target object via
+`back_project`, then plan and execute.

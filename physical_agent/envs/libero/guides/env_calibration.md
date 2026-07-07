@@ -13,9 +13,9 @@ Measured 2026-05-20 on `libero_10_with_mug` t0 (LIVING_ROOM frame) and t8
 (KITCHEN frame). All probes use `move_to` with `gripper=-1` and tight
 `step_clip≤0.015`.
 
-## Key finding: PRO has TWO scene frames, picked per-task by table fixture
+## Key finding: PRO scene frames, picked per-task by table fixture
 
-Each task scene uses one of two table fixtures, which sets the entire
+Each task scene uses one of the table fixtures below, which sets the entire
 world-frame z origin. The OSC workspace and all pick/place altitudes shift
 accordingly. **Check `states.json[0].state.robot0_eef_pos[2]` in the initial
 state and branch on it.** Do not read BDDL files for this; use runtime state and
@@ -23,12 +23,15 @@ visual evidence.
 
 | Fixture | eef home z | Table top z | Used by tasks |
 |---|---|---|---|
-| `living_room_table` | ≈ 0.68 | ≈ 0.43 | t0, t1, t2, t4, t6, t7 (basket / plates / pudding) |
-| `kitchen_table` | ≈ 1.17 | ≈ 0.90 | t3, t5, t8, t9 (stove / cabinet / drawer / microwave) |
+| `living_room_table` | ≈ 0.68 | ≈ 0.43 | libero_10 t0, t1, t2, t4, t6, t7 (basket / plates / pudding) |
+| `kitchen_table` | ≈ 1.17 | ≈ 0.90 | libero_10 t3, t5, t8, t9 (stove / cabinet / drawer / microwave) |
+| `object` (low table) | ≈ 0.26 | ≈ 0.0 | `libero_object` grocery-into-basket (see altitudes below) |
 
-(Identical to base LIBERO-10's LIVING_ROOM_SCENE vs KITCHEN_SCENE split — the
-PRO BDDLs rename the prefix to `MAIN_TABLE_SCENE1` but reuse the same
-underlying table assets.)
+(The two libero_10 frames match base LIBERO-10's LIVING_ROOM_SCENE vs
+KITCHEN_SCENE split — the PRO BDDLs rename the prefix to `MAIN_TABLE_SCENE1` but
+reuse the same underlying table assets. The `object` frame is a third, lower
+table specific to `libero_object`; its per-item pick/place altitudes are in
+`resources/libero/memory/project_libero_object_pro_done.md`.)
 
 ## OSC reachable workspace — LIVING_ROOM frame (eef home z=0.68)
 
@@ -117,8 +120,8 @@ limit 1.15). My libero_10 t0 used z=0.95 for travel — safe and consistent.
 ## Practical rules going forward
 
 1. **Always read `states.json[0].state.robot0_eef_pos[2]` before computing any z target.**
-   If it's ≈ 0.68 you're in LIVING_ROOM frame; if it's ≈ 1.17 you're in KITCHEN
-   frame. Use the right table from the table above.
+   ≈ 0.68 → LIVING_ROOM; ≈ 1.17 → KITCHEN; ≈ 0.26 → OBJECT. Use the matching
+   frame table above.
 2. **Never command an eef z below the per-frame floor.** Going to z=0.42
    in LIVING_ROOM stalls (eef refuses). Going to z=0.49 with prior xy
    drift may crash the env worker (`EOFError`).
@@ -136,13 +139,14 @@ limit 1.15). My libero_10 t0 used z=0.95 for travel — safe and consistent.
    In libero_10_with_mug t0, after the first can entered the basket Pi0
    failed to pick the second (chunks=25, peak_lift=0). Workarounds: re-pre-pos
    precisely above the remaining target at z=`floor + 0.07`; re-localize and
-   recover in the current episode if safe; or use LLM-scripted grasp via
-   `move_to` + `set_gripper` (Appendix in STRICT_HYBRID_GUIDE).
+   recover in the current episode if safe; or use an LLM-scripted grasp via
+   `move_to` + `set_gripper` (last resort; unreliable for objects <6 cm — see
+   `resources/libero/memory/feedback_scripted_pick_limits.md`).
 
 ## Calibration log files
 
 Raw probe logs are preserved in:
-- `$OUTPUT_DIR/states.json` (one step entry per command — the per-command
+- `{output_dir}/states.json` (one step entry per command — the per-command
   audit; each entry has `command`, `result`, `state`, `elapsed_s`).
 - Only kept for the most recent driver session; reproduce by re-running
   the calibration with the snippet in the next section.

@@ -14,6 +14,8 @@ FIELDS = (
     "max_turns",
     "max_tokens",
     "max_episode_steps",
+    "cerebrum_timeout_s",
+    "claude_code_max_budget_usd",
 )
 
 DEFAULTS = {
@@ -26,7 +28,15 @@ DEFAULTS = {
     "max_episode_steps": 600,
 }
 
-INT_FIELDS = {"task", "seed", "max_turns", "max_tokens", "max_episode_steps"}
+INT_FIELDS = {
+    "task",
+    "seed",
+    "max_turns",
+    "max_tokens",
+    "max_episode_steps",
+    "cerebrum_timeout_s",
+}
+FLOAT_FIELDS = {"claude_code_max_budget_usd"}
 BOOL_FIELDS: set[str] = set()
 OPTIONAL_STR_FIELDS = {"model", "cuda_device"}
 
@@ -49,7 +59,9 @@ def apply_to_args(args: Any, payload: dict[str, Any]) -> None:
         if key in OPTIONAL_STR_FIELDS and value in ("", None):
             value = None
         elif key in INT_FIELDS:
-            value = DEFAULTS[key] if value in ("", None) else int(value)
+            value = DEFAULTS.get(key) if value in ("", None) else int(value)
+        elif key in FLOAT_FIELDS:
+            value = DEFAULTS.get(key) if value in ("", None) else float(value)
         elif key in BOOL_FIELDS:
             value = _as_bool(value)
         setattr(args, key, value)

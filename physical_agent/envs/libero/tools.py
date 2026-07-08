@@ -132,7 +132,7 @@ class LiberoPrimitives:
         self,
         prompt: str,
         *,
-        max_chunks: int = 30,
+        max_chunks: int = 24,
         lift_thresh: float = 0.05,
         gripper_closed_thresh: float = 0.06,
     ) -> dict:
@@ -1210,7 +1210,7 @@ TOOLS_SPEC = [
                     "type": "string",
                     "description": "Pi0 prompt (e.g. 'pick up the akita black bowl').",
                 },
-                "max_chunks": {"type": "integer", "description": "Action-chunk budget (default 30)"},
+                "max_chunks": {"type": "integer", "description": "Action-chunk budget (default 24)"},
                 "lift_thresh": {"type": "number", "description": "EEF post-descent ascent threshold for success, m (default 0.05)"},
                 "gripper_closed_thresh": {"type": "number", "description": "Finger-separation closed threshold (default 0.06)"},
             },

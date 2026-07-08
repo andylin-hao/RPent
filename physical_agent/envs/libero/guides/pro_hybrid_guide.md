@@ -335,10 +335,7 @@ python cli/main.py --suite <suite> --task <n> --seed <k> \
 #      libero_goal_swap 2 (P2 fixture swap) · libero_10_task 5 (long horizon)
 ```
 
-`--libero-type pro` may be given as `LIBERO_TYPE=pro` instead. For
-**`--max-episode-steps`**: `libero_10` is long-horizon and needs 5000 (600 hits
-robosuite's per-episode cap mid-recipe) — `cli/main.py` **auto-bumps it to 5000**
-for `libero_10`; short suites (spatial / object / goal) stay at the 600 default.
+`--libero-type pro` may be given as `LIBERO_TYPE=pro` instead.
 
 Audit + recipe land in the run's `output_dir` (`output_dir` and `recipe_tag`
 arrive in your first message):

@@ -54,7 +54,7 @@ def start_env_server(
     task: int,
     seed: int,
     output_dir: str,
-    max_episode_steps: int = 600,
+    max_episode_steps: int = 10000,
     libero_type: str | None = None,
     cuda_device: str | None = None,
     log_path: str | None = None,
@@ -319,7 +319,7 @@ def _build_argparser() -> argparse.ArgumentParser:
     # environments
     ap.add_argument("--env", dest="env_name", default="libero",
                     help="Environment backend. Defaults to libero.")
-    ap.add_argument("--max-episode-steps", type=int, default=600)
+    ap.add_argument("--max-episode-steps", type=int, default=10000)
 
     ap.add_argument("--libero-type", default=None,
                     choices=["standard", "pro", "plus"],
@@ -373,9 +373,6 @@ def main() -> int:
     prompt_bundle = env_spec.prompts
 
     max_episode_steps = args.max_episode_steps
-    if max_episode_steps == 600 and "libero_10" in suite:
-        max_episode_steps = 5000
-        logger.info("auto-bumped max_episode_steps to 5000 for libero_10")
 
     # resolve output directory
     output_dir = args.output_dir

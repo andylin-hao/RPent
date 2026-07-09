@@ -15,6 +15,45 @@ PhysicalAgent splits an env into two processes:
 The two are connected by an `EnvClient` class that turns each agent-side
 method call into one RPC against the driver.
 
+### VLA model runs in its OWN process (env / vla split)
+
+When an env uses a VLA policy (a learned model that consumes camera obs and
+emits actions), that model runs in a **third, separate process** — never
+inside the env_server:
+
+- **VLA side** (`deployment/<backend>/vla_server.py`) — owns ONLY the VLA
+  policy (the GPU model). It exposes `vla_load` / `vla_infer` / `vla_reset`
+  over its own RPC/HTTP endpoint. It imports NO simulator.
+- The toolkit receives a **model client** (e.g. `VLAClient` for LIBERO/Pi0.5,
+  `RLDXVLAClient` for RoboCasa/RLDX-1) as its `model` argument, alongside the
+  `EnvClient`. The two clients point at two different server processes.
+
+**Why the split is mandatory (not optional):** the model (large GPU weights,
+its own CUDA context, its own heavy deps like `transformers`/`openpi`) and the
+simulator (MuJoCo/robosuite, EGL rendering bound to the main thread) have
+conflicting process-level requirements. Co-locating them in one process
+couples their lifecycles, forces one interpreter to satisfy both dependency
+trees, and lets a model OOM take down the sim. Keeping them separate means
+either can be restarted, scaled, or pointed at a remote host independently
+(`--vla_endpoint host:port` reuses an already-running model server). Every env
+MUST follow this: env_server owns the sim, vla_server owns the model.
+
+**Transport may differ per env; the architecture may not.** LIBERO's
+`vla_server.py` speaks HTTP `/predict` (flat image+state payloads);
+RoboCasa's `vla_server.py` speaks the same pickle-framed socket RPC as its
+env_server, because RLDX observations are history-stacked nested numpy dicts
+(3 camera video tensors `(1,T,H,W,3)` + `state.*` + annotation + session /
+reset_memory) that ride sockets natively but would need a bespoke wire format
+over HTTP. Choose the codec that fits the obs; keep the env/vla process split
+identical.
+
+**Anything that needs the sim env object stays in env_server.** For RoboCasa,
+`check_grasp` and `assemble_action` (the eval `unmap_action` +
+composite-controller split-index assembly) require the live robosuite env, so
+they are env_server RPCs — NOT part of the VLA server. The agent-side skill
+(`RLDXSkill`) therefore holds BOTH clients: the env client for
+render/step/grasp/assemble, the model client for inference.
+
 ## Entry point
 
 For a new env `myenv`, the file layout is:

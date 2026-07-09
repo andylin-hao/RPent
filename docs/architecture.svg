@@ -1,0 +1,171 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 880" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="softShadow" x="-6%" y="-6%" width="112%" height="112%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#3b3934" flood-opacity="0.14"/>
+    </filter>
+    <marker id="arrowReq" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c8791f"/>
+    </marker>
+    <marker id="arrowResp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9a917f"/>
+    </marker>
+  </defs>
+
+  <!-- background -->
+  <rect x="0" y="0" width="1280" height="880" fill="#f6f1e8"/>
+
+  <!-- title -->
+  <text x="640" y="52" text-anchor="middle" font-size="36" font-weight="700" fill="#2f6fd6" letter-spacing="1">RPent</text>
+  <text x="640" y="82" text-anchor="middle" font-size="16" fill="#877f70">LLM 高层推理 · VLA 底层执行 · 仿真闭环的具身智能体框架</text>
+  <line x1="360" y1="98" x2="920" y2="98" stroke="#d8cfbe" stroke-width="1.5"/>
+
+  <!-- ===================== Agent main process ===================== -->
+  <g filter="url(#softShadow)">
+    <rect x="48" y="120" width="500" height="620" rx="14" fill="#ffffff" stroke="#2f6fd6" stroke-width="2"/>
+  </g>
+  <rect x="48" y="120" width="500" height="46" rx="14" fill="#2f6fd6"/>
+  <rect x="48" y="150" width="500" height="16" fill="#2f6fd6"/>
+  <text x="72" y="150" font-size="18" font-weight="700" fill="#ffffff">Agent 主进程</text>
+  <text x="524" y="149" text-anchor="end" font-size="12.5" fill="#dbe8fb" font-style="italic">cli/main.py · 不加载 torch</text>
+
+  <!-- Cerebrum -->
+  <rect x="74" y="186" width="448" height="112" rx="10" fill="#eef5fb" stroke="#2f6fd6" stroke-width="1.3"/>
+  <text x="90" y="210" font-size="15.5" font-weight="700" fill="#2f6fd6">Cerebrum · 决策大脑（LLM）</text>
+  <text x="512" y="209" text-anchor="end" font-size="11" fill="#877f70">工具调用循环</text>
+  <g font-size="13" fill="#3b3934">
+    <rect x="90" y="222" width="138" height="62" rx="8" fill="#ffffff" stroke="#a9c7ee"/>
+    <text x="159" y="246" text-anchor="middle" font-weight="700" font-size="13.5">api</text>
+    <text x="159" y="266" text-anchor="middle" font-size="10.5" fill="#877f70">pydantic-ai</text>
+    <text x="159" y="279" text-anchor="middle" font-size="10.5" fill="#877f70">Anthropic/OpenAI</text>
+
+    <rect x="238" y="222" width="138" height="62" rx="8" fill="#ffffff" stroke="#a9c7ee"/>
+    <text x="307" y="246" text-anchor="middle" font-weight="700" font-size="13.5">claude_code</text>
+    <text x="307" y="266" text-anchor="middle" font-size="10.5" fill="#877f70">Claude Agent SDK</text>
+    <text x="307" y="279" text-anchor="middle" font-size="10.5" fill="#877f70">进程内 MCP</text>
+
+    <rect x="386" y="222" width="128" height="62" rx="8" fill="#ffffff" stroke="#a9c7ee"/>
+    <text x="450" y="246" text-anchor="middle" font-weight="700" font-size="13.5">codex</text>
+    <text x="450" y="266" text-anchor="middle" font-size="10.5" fill="#877f70">Codex SDK</text>
+    <text x="450" y="279" text-anchor="middle" font-size="10.5" fill="#877f70">HTTP MCP</text>
+  </g>
+
+  <!-- Context & Prompts -->
+  <rect x="74" y="312" width="448" height="60" rx="10" fill="#faf6ee" stroke="#d8cfbe" stroke-width="1.2"/>
+  <text x="90" y="336" font-size="15" font-weight="700" fill="#3b3934">Context &amp; Prompts · 上下文与提示词</text>
+  <text x="90" y="357" font-size="11.5" fill="#877f70">system/user 提示词树 · 历史消息 · 图像裁剪 · guide 文档</text>
+
+  <!-- Toolkit -->
+  <rect x="74" y="386" width="448" height="60" rx="10" fill="#faf6ee" stroke="#d8cfbe" stroke-width="1.2"/>
+  <text x="90" y="410" font-size="15" font-weight="700" fill="#3b3934">Toolkit · 工具容器</text>
+  <text x="90" y="431" font-size="11.5" fill="#877f70">Anthropic 形状 schema · 结果→多模态 content block（文本+图像）</text>
+
+  <!-- Primitives -->
+  <rect x="74" y="460" width="448" height="60" rx="10" fill="#faf6ee" stroke="#d8cfbe" stroke-width="1.2"/>
+  <text x="90" y="484" font-size="15" font-weight="700" fill="#3b3934">Primitives · 原语驱动</text>
+  <text x="90" y="505" font-size="11.5" fill="#877f70">pi0_pick · move_to · rotate_wrist · back_project · finish …</text>
+
+  <!-- RPC Clients -->
+  <rect x="74" y="534" width="448" height="104" rx="10" fill="#eef5fb" stroke="#2f6fd6" stroke-width="1.3"/>
+  <text x="90" y="558" font-size="15.5" font-weight="700" fill="#2f6fd6">RPC 客户端</text>
+  <text x="512" y="557" text-anchor="end" font-size="11" fill="#877f70">进程解耦</text>
+  <rect x="90" y="570" width="212" height="54" rx="8" fill="#ffffff" stroke="#a9c7ee"/>
+  <text x="196" y="593" text-anchor="middle" font-weight="700" font-size="13.5" fill="#3b3934">EnvClient</text>
+  <text x="196" y="613" text-anchor="middle" font-size="10.5" fill="#877f70">env.reset / step / chunk_step</text>
+  <rect x="310" y="570" width="204" height="54" rx="8" fill="#ffffff" stroke="#a9c7ee"/>
+  <text x="412" y="593" text-anchor="middle" font-weight="700" font-size="13.5" fill="#3b3934">VLAClient</text>
+  <text x="412" y="613" text-anchor="middle" font-size="10.5" fill="#877f70">predict / vla_infer</text>
+
+  <!-- Dashboard (optional) -->
+  <rect x="74" y="654" width="448" height="66" rx="10" fill="#fbf4e6" stroke="#b07a0a" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="90" y="678" font-size="14.5" font-weight="700" fill="#b07a0a">Dashboard（可选 --dashboard）</text>
+  <text x="90" y="699" font-size="11.5" fill="#877f70">FastAPI + SSE 实时监控：推理流 · 实时画面 · 动作时间线 · 回放</text>
+  <text x="90" y="714" font-size="11.5" fill="#877f70">中/英双语界面 --dashboard_language {en, zh-cn}</text>
+
+  <!-- ===================== env_server ===================== -->
+  <g filter="url(#softShadow)">
+    <rect x="732" y="150" width="500" height="248" rx="14" fill="#ffffff" stroke="#2f8a3e" stroke-width="2"/>
+  </g>
+  <rect x="732" y="150" width="500" height="44" rx="14" fill="#2f8a3e"/>
+  <rect x="732" y="178" width="500" height="16" fill="#2f8a3e"/>
+  <text x="756" y="179" font-size="17" font-weight="700" fill="#ffffff">env_server 进程</text>
+  <text x="1208" y="178" text-anchor="end" font-size="12" fill="#dcefdf" font-style="italic">deployment/&lt;backend&gt;/env_server.py</text>
+
+  <rect x="756" y="212" width="222" height="86" rx="9" fill="#eaf6ec" stroke="#8fce9c"/>
+  <text x="867" y="236" text-anchor="middle" font-size="14.5" font-weight="700" fill="#2f8a3e">LIBERO</text>
+  <text x="867" y="258" text-anchor="middle" font-size="11.5" fill="#877f70">MuJoCo · rlinf.LiberoEnv</text>
+  <text x="867" y="276" text-anchor="middle" font-size="11.5" fill="#877f70">standard / pro / plus</text>
+  <text x="867" y="292" text-anchor="middle" font-size="10.5" fill="#877f70">动作 7-D · chunk_step</text>
+
+  <rect x="986" y="212" width="222" height="86" rx="9" fill="#eaf6ec" stroke="#8fce9c"/>
+  <text x="1097" y="236" text-anchor="middle" font-size="14.5" font-weight="700" fill="#2f8a3e">RoboCasa</text>
+  <text x="1097" y="258" text-anchor="middle" font-size="11.5" fill="#877f70">robosuite · PandaOmron</text>
+  <text x="1097" y="276" text-anchor="middle" font-size="11.5" fill="#877f70">厨房长程任务</text>
+  <text x="1097" y="292" text-anchor="middle" font-size="10.5" fill="#877f70">动作 12-D · 逐步 step</text>
+
+  <rect x="756" y="312" width="452" height="70" rx="9" fill="#faf6ee" stroke="#d8cfbe"/>
+  <text x="772" y="334" font-size="12.5" font-weight="700" fill="#3b3934">持有仿真器 · 渲染（EGL，绑定主线程）· GPU</text>
+  <text x="772" y="354" font-size="11" fill="#877f70">返回值全转 CPU numpy（可 pickle，torch-free）</text>
+  <text x="772" y="371" font-size="11" fill="#877f70">parent watchdog 自清理 · env_meta 校验防连错 server</text>
+
+  <!-- ===================== vla_server ===================== -->
+  <g filter="url(#softShadow)">
+    <rect x="732" y="448" width="500" height="248" rx="14" fill="#ffffff" stroke="#7a52c4" stroke-width="2"/>
+  </g>
+  <rect x="732" y="448" width="500" height="44" rx="14" fill="#7a52c4"/>
+  <rect x="732" y="476" width="500" height="16" fill="#7a52c4"/>
+  <text x="756" y="477" font-size="17" font-weight="700" fill="#ffffff">vla_server 进程</text>
+  <text x="1208" y="476" text-anchor="end" font-size="12" fill="#e6dcf5" font-style="italic">deployment/&lt;backend&gt;/vla_server.py</text>
+
+  <rect x="756" y="510" width="222" height="86" rx="9" fill="#f3edfa" stroke="#c3adea"/>
+  <text x="867" y="534" text-anchor="middle" font-size="14.5" font-weight="700" fill="#7a52c4">Pi0.5</text>
+  <text x="867" y="556" text-anchor="middle" font-size="11.5" fill="#877f70">openpi · pi05_libero</text>
+  <text x="867" y="574" text-anchor="middle" font-size="11.5" fill="#877f70">HTTP  POST /predict</text>
+  <text x="867" y="590" text-anchor="middle" font-size="10.5" fill="#877f70">LIBERO 策略</text>
+
+  <rect x="986" y="510" width="222" height="86" rx="9" fill="#f3edfa" stroke="#c3adea"/>
+  <text x="1097" y="534" text-anchor="middle" font-size="14.5" font-weight="700" fill="#7a52c4">RLDX-1</text>
+  <text x="1097" y="556" text-anchor="middle" font-size="11.5" fill="#877f70">socket-RPC · vla.infer</text>
+  <text x="1097" y="574" text-anchor="middle" font-size="11.5" fill="#877f70">历史堆叠 obs 张量</text>
+  <text x="1097" y="590" text-anchor="middle" font-size="10.5" fill="#877f70">RoboCasa 策略</text>
+
+  <rect x="756" y="610" width="452" height="70" rx="9" fill="#faf6ee" stroke="#d8cfbe"/>
+  <text x="772" y="632" font-size="12.5" font-weight="700" fill="#3b3934">仅持有 GPU 策略权重 · 独立 CUDA 上下文</text>
+  <text x="772" y="652" font-size="11" fill="#877f70">与仿真进程分离：依赖树互不干扰，可独立重启 / 远程复用</text>
+  <text x="772" y="669" font-size="11" fill="#877f70">checkpoint：PI05_CHECKPOINT_PATH / RLDX_CHECKPOINT_PATH</text>
+
+  <!-- ===================== links: Agent <-> env_server ===================== -->
+  <!-- request -->
+  <path d="M548,566 L636,566 L636,258 L726,258" fill="none" stroke="#c8791f" stroke-width="2.2" marker-end="url(#arrowReq)"/>
+  <!-- response -->
+  <path d="M726,288 L660,288 L660,590 L548,590" fill="none" stroke="#9a917f" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrowResp)"/>
+  <rect x="572" y="150" width="150" height="20" rx="5" fill="#f6f1e8"/>
+  <text x="580" y="165" font-size="11.5" font-weight="700" fill="#c8791f">socket-RPC（pickle 帧）</text>
+  <text x="580" y="466" font-size="10.5" fill="#9a917f">↩ obs · reward · frames</text>
+
+  <!-- ===================== links: Agent <-> vla_server ===================== -->
+  <!-- request -->
+  <path d="M548,600 L612,600 L612,546 L726,546" fill="none" stroke="#c8791f" stroke-width="2.2" marker-end="url(#arrowReq)"/>
+  <!-- response -->
+  <path d="M726,574 L590,574 L590,624 L548,624" fill="none" stroke="#9a917f" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrowResp)"/>
+  <rect x="556" y="506" width="150" height="20" rx="5" fill="#f6f1e8"/>
+  <text x="564" y="521" font-size="11.5" font-weight="700" fill="#c8791f">HTTP /predict · vla.infer</text>
+  <text x="600" y="640" font-size="10.5" fill="#9a917f">↩ action chunk [T, dim]</text>
+
+  <!-- ===================== closed-loop footer ===================== -->
+  <rect x="48" y="768" width="1184" height="82" rx="12" fill="#fffdf8" stroke="#d8cfbe" stroke-width="1.4"/>
+  <text x="72" y="796" font-size="14.5" font-weight="700" fill="#2f6fd6">LLM-in-the-loop 闭环</text>
+  <g font-size="12.5" fill="#3b3934">
+    <text x="200" y="796" font-weight="700" fill="#c8791f">①</text>
+    <text x="218" y="796">LLM 决策，调用工具</text>
+    <text x="392" y="796" font-weight="700" fill="#c8791f">②</text>
+    <text x="410" y="796">Primitives 请求 VLA 推理动作块</text>
+    <text x="660" y="796" font-weight="700" fill="#c8791f">③</text>
+    <text x="678" y="796">env 执行动作 chunk</text>
+    <text x="872" y="796" font-weight="700" fill="#c8791f">④</text>
+    <text x="890" y="796">渲染观测 / 图像</text>
+    <text x="1050" y="796" font-weight="700" fill="#c8791f">⑤</text>
+    <text x="1068" y="796">回灌 LLM</text>
+  </g>
+  <text x="72" y="826" font-size="11.5" fill="#877f70">端口发现：env/vla server 以 transport_port=0 让 OS 选端口，向 stdout 打印 transport_ready 事件，主进程据此建连。</text>
+  <text x="72" y="842" font-size="11.5" fill="#877f70">终止：LLM 调用 finish 工具（success / failure / stuck）或达到 --max_turns / --max_episode_steps 上限。</text>
+</svg>

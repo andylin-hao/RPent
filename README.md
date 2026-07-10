@@ -1,6 +1,6 @@
 <div align="center">
   <h1>RPent</h1>
-  <p><i>A physical-agent framework where LLMs reason and VLAs act, in a closed simulation loop.</i></p>
+  <p><i>A physical-agent framework where LLMs reason and VLAs act, in a closed loop.</i></p>
 </div>
 
 <div align="center">
@@ -11,7 +11,7 @@
 
 </div>
 
-RPent is an **embodied-agent framework** that puts a large language model *in the loop* as the decision-making brain. The LLM does high-level reasoning and calls tools; a Vision-Language-Action (VLA) policy such as **Pi0.5** or **RLDX-1** executes the low-level motor actions; a simulator (**LIBERO** or **RoboCasa**) closes the loop by returning observations and rendered frames. Reasoning, action, and simulation each run in their own process, so heavyweight GPU models and the physics engine never fight over one Python interpreter.
+RPent is an **physical-agent framework** that puts a large language model *in the loop* as the decision-making brain. The LLM does high-level reasoning and calls tools; a Vision-Language-Action (VLA) policy such as **Pi0.5** or **RLDX-1** executes the low-level motor actions; a simulator (**LIBERO** or **RoboCasa**) closes the loop by returning observations and rendered frames. Reasoning, action, and simulation each run in their own process, so heavyweight GPU models and the physics engine never fight over one Python interpreter.
 
 <div align="center">
   <img src="docs/architecture.svg" alt="RPent architecture" width="960"/>

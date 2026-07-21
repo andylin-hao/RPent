@@ -61,6 +61,7 @@ libero = [
     "bddl",
     "easydict",
     "matplotlib",
+    "gym"
 ]
 libero-pro = [
     "rpent[libero]",

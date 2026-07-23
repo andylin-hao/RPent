@@ -156,7 +156,7 @@ export CUDA_VISIBLE_DEVICES=0
 
 # 运行一个任务：libero_object_swap，task 2，seed 0，使用 api 规划器
 # 和 Anthropic 模型，最大输出 8192 token。
-#   • OpenAI-compatible chat 端点：      --model openai-chat:glm-5.2（纯文本）
+#   • OpenAI-compatible chat 端点：      --model openai-chat:gpt-5.5
 #   • OpenAI responses 端点：            --model openai:gpt-5.5
 #   • claude_code / codex 规划器：       不需要 provider 前缀，如 --model claude-opus-4-8
 rpent --suite libero_object_swap --task 2 --seed 0 \

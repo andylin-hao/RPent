@@ -156,12 +156,14 @@ export CUDA_VISIBLE_DEVICES=0
 
 # Run one task: libero_object_swap, task 2, seed 0, using the `api` planner
 # with an Anthropic model and an 8192-token cap.
-#   • OpenAI-compatible chat endpoints:  --model openai-chat:glm-5.2
+#   • OpenAI-compatible chat endpoints:  --model openai-chat:gpt-5.5
 #   • OpenAI responses endpoints:        --model openai:gpt-5.5
 #   • claude_code / codex planners:     no provider prefix, e.g. --model claude-opus-4-8
 rpent --env libero --suite libero_object_swap --task 2 --seed 0 \
   --planner api --model anthropic:claude-opus-4-8 --max-tokens 8192
 ```
+
+> ⚠️ For text-only models, add `--no-images` — the agent then reasons from textual state alone (image observations become file-path notices), so task performance may not be satisfactory.
 
 ### Live Dashboard
 
@@ -191,6 +193,7 @@ rpent --env libero --dashboard --dashboard-language zh-cn \
     <tr><td><code>--model</code></td><td>—</td><td>Model id; for <code>api</code>, prefix the provider (<code>anthropic:…</code>, <code>openai:…</code>, <code>openai-chat:…</code>)</td></tr>
     <tr><td><code>--max-turns</code></td><td><code>100</code></td><td>Max agent turns</td></tr>
     <tr><td><code>--max-tokens</code></td><td><code>8192</code></td><td>Max tokens per LLM reply</td></tr>
+    <tr><td><code>--no-images</code></td><td>off</td><td>Text-only mode: never send image bytes (for models that reject image input)</td></tr>
     <tr><td><code>--max-episode-steps</code></td><td><code>10000</code></td><td>Max env steps</td></tr>
     <tr><td><code>--libero-type</code></td><td><code>LIBERO_TYPE</code> or <code>pro</code></td><td>LIBERO variant: <code>standard</code> | <code>pro</code> | <code>plus</code></td></tr>
     <tr><td><code>--cuda-device</code></td><td>inherited</td><td>GPU device(s) exposed to the env / vla servers</td></tr>

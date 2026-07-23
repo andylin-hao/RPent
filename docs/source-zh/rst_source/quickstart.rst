@@ -41,14 +41,19 @@
 **模型 id 规约。** ``api`` planner 下, ``--model`` 需要带 provider
 前缀; ``claude_code`` / ``codex`` 下, 直接写裸模型名:
 
-- OpenAI 兼容 chat 接口 —— ``--model openai-chat:glm-5.2``
+- OpenAI 兼容 chat 接口 —— ``--model openai-chat:gpt-5.5``
 - OpenAI Responses 接口 —— ``--model openai:gpt-5.5``
 - ``claude_code`` / ``codex`` —— 不加前缀, 如
   ``--model claude-opus-4-8``
 
+.. note::
+
+   纯文本模型需搭配 ``--no-images`` 运行 —— 此时智能体只依赖文本
+   状态推理, 任务表现可能不够理想。
+
 完整的 brain 切换指南见 :doc:`usage/configure_planner`。
 
-3. 用 dashboard 观察运行
+1. 用 dashboard 观察运行
 ------------------------
 
 加上 ``--dashboard`` 会打开浏览器监控页面。它会先展示一个 launcher
@@ -98,6 +103,9 @@
    * - ``--max-tokens``
      - ``8192``
      - LLM 每次回复的最大 token 数
+   * - ``--no-images``
+     - 关
+     - 纯文本模式: 不向模型发送图片字节 (用于不支持图片输入的模型)
    * - ``--max-episode-steps``
      - ``10000``
      - Env 最大 step 数

@@ -156,12 +156,14 @@ export CUDA_VISIBLE_DEVICES=0
 
 # 运行一个任务：libero_object_swap，task 2，seed 0，使用 api 规划器
 # 和 Anthropic 模型，最大输出 8192 token。
-#   • OpenAI-compatible chat 端点：      --model openai-chat:glm-5.2
+#   • OpenAI-compatible chat 端点：      --model openai-chat:glm-5.2（纯文本）
 #   • OpenAI responses 端点：            --model openai:gpt-5.5
 #   • claude_code / codex 规划器：       不需要 provider 前缀，如 --model claude-opus-4-8
 rpent --suite libero_object_swap --task 2 --seed 0 \
   --planner api --model anthropic:claude-opus-4-8 --max-tokens 8192
 ```
+
+> ⚠️ 纯文本模型需搭配 `--no-images` 运行——此时智能体只能依赖文本状态推理（图像观测退化为文件路径提示），任务表现可能不够理想。
 
 ### 实时 Dashboard
 
@@ -202,6 +204,7 @@ bash scripts/run_robocasa.sh PickPlaceCounterToCabinet 0 0    # <任务> <GPU> <
     <tr><td><code>--model</code></td><td>—</td><td>模型 id；<code>api</code> 需带 provider 前缀（<code>anthropic:…</code>、<code>openai:…</code>、<code>openai-chat:…</code>）</td></tr>
     <tr><td><code>--max-turns</code></td><td><code>100</code></td><td>智能体最大轮数</td></tr>
     <tr><td><code>--max-tokens</code></td><td><code>8192</code></td><td>单次 LLM 回复最大 token</td></tr>
+    <tr><td><code>--no-images</code></td><td>关</td><td>纯文本模式：不向模型发送图片字节（用于不支持图片输入的模型）</td></tr>
     <tr><td><code>--max-episode-steps</code></td><td><code>10000</code></td><td>环境最大步数</td></tr>
     <tr><td><code>--libero-type</code></td><td><code>LIBERO_TYPE</code> 或 <code>pro</code></td><td>LIBERO 类型：<code>standard</code> | <code>pro</code> | <code>plus</code></td></tr>
     <tr><td><code>--cuda-device</code></td><td>继承当前环境</td><td>env / vla server 可见的 GPU 设备</td></tr>

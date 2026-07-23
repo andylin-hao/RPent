@@ -45,14 +45,20 @@ Run a single LIBERO PRO task (``libero_object_swap``, task ``2``, seed
 for the ``api`` planner, and a bare id for the ``claude_code`` /
 ``codex`` planners:
 
-- OpenAI-compatible chat endpoints — ``--model openai-chat:glm-5.2``
+- OpenAI-compatible chat endpoints — ``--model openai-chat:gpt-5.5``
 - OpenAI responses endpoints — ``--model openai:gpt-5.5``
 - ``claude_code`` / ``codex`` — no provider prefix, e.g.
   ``--model claude-opus-4-8``
 
+.. note::
+
+   For text-only models, add ``--no-images`` — the agent then reasons
+   from textual state alone, so task performance may not be
+   satisfactory.
+
 See :doc:`usage/configure_planner` for the full brain-swapping guide.
 
-3. Watch it run in the dashboard
+1. Watch it run in the dashboard
 --------------------------------
 
 Add ``--dashboard`` to open a browser monitor for the run. It boots a
@@ -102,6 +108,9 @@ The most common flags of ``rpent`` at a glance:
    * - ``--max-tokens``
      - ``8192``
      - Max tokens per LLM reply
+   * - ``--no-images``
+     - off
+     - Text-only mode: never send image bytes (for models that reject image input)
    * - ``--max-episode-steps``
      - ``10000``
      - Max env steps
